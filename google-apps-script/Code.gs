@@ -53,6 +53,12 @@ function route_(packet) {
   if (method === 'POST' && path === '/api/bookings/report') {
     const booking = findBooking_(body.reference, body.name);
     if (!booking) return fail_(404, 'No booking matched that reference and name.');
+    if (booking.status === 'Paid') return fail_(409, 'This booking has already been verified as paid.');
+    const paymentReference = String(body.paymentReference || '').trim().slice(0, 120);
+    const receiptImage = String(body.receiptImage || '');
+    if (!paymentReference && !receiptImage) return fail_(400, 'Upload a receipt image or enter a payment reference number.');
+    if (receiptImage && !validImage_(receiptImage)) return fail_(400, 'Receipt must be a PNG, JPEG, GIF, or WebP image under 3 MB.');
+    saveBookingProof_(booking.reference, paymentReference, receiptImage);
     if (booking.status === 'Awaiting payment') updateBooking_(booking.reference, function (row) { row.status = 'Payment reported'; });
     return ok_({ ok: true });
   }
@@ -75,7 +81,16 @@ function route_(packet) {
   if (path.indexOf('/api/admin/') === 0) {
     const user = sessionUser_(packet.token);
     if (!user) return fail_(401, 'Admin sign-in required.');
-    if (method === 'GET' && path === '/api/admin/dashboard') return ok_({ settings: settings, bookings: readBookings_().sort(function (a, b) { return b.createdAt.localeCompare(a.createdAt); }), user: user });
+    if (method === 'GET' && path === '/api/admin/dashboard') {
+      const proofs = readBookingProofSummaries_();
+      const bookings = readBookings_().map(function (booking) { const proof = proofs[booking.reference] || {}; booking.paymentReference = proof.paymentReference || ''; booking.hasReceipt = Boolean(proof.hasReceipt); return booking; });
+      return ok_({ settings: settings, bookings: bookings.sort(function (a, b) { return b.createdAt.localeCompare(a.createdAt); }), user: user });
+    }
+    if (method === 'POST' && path === '/api/admin/bookings/proof') {
+      const booking = readBookings_().find(function (item) { return item.reference === String(body.reference || ''); });
+      if (!booking) return fail_(404, 'Booking not found.');
+      return ok_(readBookingProof_(booking.reference));
+    }
     if (method === 'POST' && path === '/api/admin/courts') {
       const court = normalizeCourt_(body);
       if (!court) return fail_(400, 'Check the court details and image format.');
@@ -193,7 +208,35 @@ const BOOKING_HEADERS = ['reference', 'name', 'courtId', 'court', 'dateISO', 'da
 function readBookings_() { const sh = sheet_('Bookings', BOOKING_HEADERS), rows = sh.getDataRange().getValues(); return rows.slice(1).filter(function (r) { return r[0]; }).map(function (r) { const times = JSON.parse(r[6] || '[]'), minutes = JSON.parse(r[7] || '[]'); return { reference: r[0], name: r[1], courtId: r[2], court: r[3], dateISO: r[4], date: r[5], times: times, time: times.join(', '), minutes: minutes, duration: Number(r[8]), amount: Number(r[9]), status: r[10], createdAt: r[11], paidAt: r[12] || '' }; }); }
 function appendBooking_(b) { sheet_('Bookings', BOOKING_HEADERS).appendRow([b.reference, b.name, b.courtId, b.court, b.dateISO, b.date, JSON.stringify(b.times), JSON.stringify(b.minutes), b.duration, b.amount, b.status, b.createdAt, b.paidAt]); }
 function updateBooking_(reference, change) { const sh = sheet_('Bookings', BOOKING_HEADERS), rows = sh.getDataRange().getValues(); for (let i = 1; i < rows.length; i++) if (rows[i][0] === reference) { const b = readBookings_().find(function (x) { return x.reference === reference; }); change(b); sh.getRange(i + 1, 11, 1, 3).setValues([[b.status, b.createdAt, b.paidAt]]); return; } }
-function deleteBooking_(reference) { const sh = sheet_('Bookings', BOOKING_HEADERS), rows = sh.getDataRange().getValues(); for (let i = rows.length - 1; i > 0; i--) if (rows[i][0] === reference) sh.deleteRow(i + 1); }
+function deleteBooking_(reference) {
+  const sh = sheet_('Bookings', BOOKING_HEADERS), rows = sh.getDataRange().getValues();
+  for (let i = rows.length - 1; i > 0; i--) if (rows[i][0] === reference) sh.deleteRow(i + 1);
+  const proofSheet = sheet_('BookingProofs', ['reference', 'paymentReference', 'imagePart', 'imageData']), proofRows = proofSheet.getDataRange().getValues();
+  for (let i = proofRows.length - 1; i > 0; i--) if (proofRows[i][0] === reference) proofSheet.deleteRow(i + 1);
+}
+function saveBookingProof_(reference, paymentReference, receiptImage) {
+  const sh = sheet_('BookingProofs', ['reference', 'paymentReference', 'imagePart', 'imageData']), rows = sh.getDataRange().getValues(), output = [], chunkSize = 40000;
+  for (let i = rows.length - 1; i > 0; i--) if (rows[i][0] === reference) sh.deleteRow(i + 1);
+  if (receiptImage) {
+    for (let i = 0; i < receiptImage.length; i += chunkSize) output.push([reference, paymentReference, i / chunkSize, receiptImage.slice(i, i + chunkSize)]);
+  } else output.push([reference, paymentReference, '', '']);
+  if (output.length) sh.getRange(sh.getLastRow() + 1, 1, output.length, 4).setValues(output);
+}
+function readBookingProofSummaries_() {
+  const sh = sheet_('BookingProofs', ['reference', 'paymentReference', 'imagePart', 'imageData']), rows = sh.getDataRange().getValues(), summaries = {};
+  rows.slice(1).forEach(function (row) {
+    if (!row[0]) return;
+    const proof = summaries[row[0]] || { paymentReference: String(row[1] || ''), hasReceipt: false };
+    if (row[2] !== '' && row[2] !== null) proof.hasReceipt = true;
+    summaries[row[0]] = proof;
+  });
+  return summaries;
+}
+function readBookingProof_(reference) {
+  const sh = sheet_('BookingProofs', ['reference', 'paymentReference', 'imagePart', 'imageData']), rows = sh.getDataRange().getValues(), matched = rows.slice(1).filter(function (row) { return row[0] === reference; }), parts = [];
+  matched.forEach(function (row) { if (row[2] !== '' && row[2] !== null) parts[Number(row[2])] = String(row[3] || ''); });
+  return { paymentReference: matched.length ? String(matched[0][1] || '') : '', receiptImage: parts.join('') };
+}
 function markPaid_(reference) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) return fail_(503, 'Bookings are busy. Please try again.');
