@@ -38,7 +38,9 @@
       field.type = 'hidden'; field.name = 'packet'; field.value = JSON.stringify(packet); form.append(field);
       const cleanup = () => { window.removeEventListener('message', onMessage); window.clearTimeout(timeout); form.remove(); frame.remove(); };
       const onMessage = event => {
-        if (event.source !== frame.contentWindow || !event.data || event.data.requestId !== packet.requestId) return;
+        const host = (() => { try { return new URL(event.origin).hostname; } catch { return ''; } })();
+        const trustedOrigin = host === 'script.google.com' || host === 'script.googleusercontent.com' || host.endsWith('-script.googleusercontent.com');
+        if (!trustedOrigin || !event.data || event.data.requestId !== packet.requestId) return;
         cleanup(); resolve(event.data.result || {});
       };
       const timeout = window.setTimeout(() => { cleanup(); reject(new Error('Google Sheets did not respond. Check the Apps Script deployment and try again.')); }, 30000);
@@ -233,3 +235,4 @@
   }
   start();
 })();
+
