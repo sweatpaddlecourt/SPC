@@ -65,7 +65,7 @@
     const hour24 = Math.floor(minute / 60), hour = hour24 % 12 || 12;
     return `${hour}:${String(minute % 60).padStart(2, '0')} ${hour24 >= 12 ? 'PM' : 'AM'}`;
   }
-  const timeChoices = Array.from({ length: 17 }, (_, index) => ({ start: 300 + index * 60, label: formatTime(300 + index * 60) }));
+  const timeChoices = Array.from({ length: 17 }, (_, index) => { const start = 300 + index * 60; return { start, label: `${formatTime(start)}–${formatTime(start + 60)}` }; });
 
   function renderHero() {
     const images = [settings.heroImage, ...settings.courts.map(court => court.image)].map(safeImage).filter(Boolean);
@@ -125,11 +125,11 @@
     function updatePrice() {
       const chosen = [...selected.entries()].sort((a, b) => a[0] - b[0]);
       const total = chosen.reduce((sum, [minute]) => sum + (minute < 1020 ? Number(court.dayRate) : Number(court.nightRate)), 0);
-      price.textContent = chosen.length ? `${chosen.length} hour${chosen.length === 1 ? '' : 's'} · ${chosen.map(row => row[1]).join(', ')} · ${money(total)} total` : 'Select times to see your total.';
+      price.textContent = chosen.length ? `${chosen.length} hour${chosen.length === 1 ? '' : 's'} · ${chosen.map(([minute]) => `${formatTime(minute)}–${formatTime(minute + 60)}`).join(', ')} · ${money(total)} total` : 'Select times to see your total.';
     }
     date.addEventListener('change', () => loadSlots(true));
     $('#submitBooking').addEventListener('click', async () => {
-      const name = $('#bookingName').value.trim(), times = [...selected.entries()].sort((a, b) => a[0] - b[0]).map(row => row[1]);
+      const name = $('#bookingName').value.trim(), times = [...selected.keys()].sort((a, b) => a - b).map(formatTime);
       if (name.length < 2 || !times.length) return showNotice(error, 'Enter your name and choose at least one hour.');
       const button = $('#submitBooking'); button.disabled = true; button.textContent = 'Reserving…';
       try { const data = await post('/api/bookings', { name, courtId, dateISO: date.value, times }); closeModal(); showPayment(data.booking, data.settings); }
