@@ -1,0 +1,8 @@
+{
+  "name": "sweat-paddle-booking",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Server-backed booking system for Sweat Paddle Court",
+  "engines": { "node": ">=22.13" },
+  "scripts": { "start": "node server.js" }
+}
