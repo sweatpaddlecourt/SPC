@@ -25,7 +25,7 @@ function doPost(e) {
 
 function bridgeOutput_(requestId, result) {
   const payload = JSON.stringify({ requestId: requestId, result: result }).replace(/</g, '\\u003c');
-  return HtmlService.createHtmlOutput('<!doctype html><meta charset="utf-8"><script>parent.postMessage(' + payload + ',"*");</script>')
+  return HtmlService.createHtmlOutput('<!doctype html><meta charset="utf-8"><script>window.top.postMessage(' + payload + ',"*");</script>')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
@@ -223,3 +223,4 @@ function digest_(s) { return Utilities.computeDigest(Utilities.DigestAlgorithm.S
 function ok_(data, status) { return Object.assign({ status: status || 200 }, data); }
 function fail_(status, error) { return { status: status, error: error }; }
 function message_(error) { return error && error.message ? error.message : String(error); }
+
