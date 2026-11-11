@@ -6,6 +6,7 @@
 const SHEET_ID = 'PASTE_YOUR_GOOGLE_SHEET_ID_HERE';
 const SETTINGS_KEY = 'site_settings';
 const SESSION_TTL_SECONDS = 21600;
+const BOOKING_TIME_ZONE = 'Asia/Manila';
 
 function doGet() {
   return jsonOutput_({ ok: true, service: 'Sweat Paddle Court booking API' });
@@ -132,18 +133,19 @@ function route_(packet) {
 
 function bookingBlocksTime_(booking) { return ['paid', 'confirmed', 'booked'].indexOf(String(booking.status || '').trim().toLowerCase()) >= 0; }
 
-function createBooking_(body) {
+function normalizeDateISO_(value, timeZone) { if (value instanceof Date && !isNaN(value.getTime())) return Utilities.formatDate(value, timeZone || BOOKING_TIME_ZONE, 'yyyy-MM-dd'); const text = String(value || '').trim(), match = text.match(/^\\d{4}-\\d{2}-\\d{2}/); return match ? match[0] : text; }\nfunction bookingClock_() { const stamp = Utilities.formatDate(new Date(), BOOKING_TIME_ZONE, 'yyyy-MM-dd HH:mm'), parts = stamp.split(' '), hm = parts[1].split(':').map(Number); return { dateISO: parts[0], minuteOfDay: hm[0] * 60 + hm[1] }; }\nfunction bookingTimeHasPassed_(dateISO, minutes) { const now = bookingClock_(); return dateISO < now.dateISO || (dateISO === now.dateISO && minutes.some(function (minute) { return minute < now.minuteOfDay; })); }\n\nfunction createBooking_(body) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) return fail_(503, 'Bookings are busy. Please try again.');
   try {
     const name = String(body.name || '').trim().slice(0, 80), courtId = String(body.courtId || ''), date = String(body.dateISO || '');
     const times = Array.isArray(body.times) ? Array.from(new Set(body.times)).slice(0, 17) : [];
-    if (name.length < 2 || !validDate_(date) || date < new Date().toISOString().slice(0, 10) || !times.length) return fail_(400, 'Enter your name, choose a valid date, and select at least one hour.');
+    if (name.length < 2 || !validDate_(date) || !times.length) return fail_(400, 'Enter your name, choose a valid date, and select at least one hour.');
     const settings = readSettings_(), court = settings.courts.find(function (c) { return c.id === courtId; });
     if (!court) return fail_(400, 'That court is no longer available. Refresh and try again.');
     const minutes = times.map(parseTime_);
     if (minutes.some(function (n) { return n === null; }) || new Set(minutes).size !== minutes.length) return fail_(400, 'One or more selected times are invalid.');
     minutes.sort(function (a, b) { return a - b; });
+    if (bookingTimeHasPassed_(date, minutes)) return fail_(400, 'One or more selected times have already passed. Choose a future time.');
     if (courtId === 'exclusive' && minutes.length > 1) return fail_(400, 'Exclusive court bookings must be reserved one hour at a time.');
     const rows = readBookings_();
     const clash = rows.some(function (b) { return bookingBlocksTime_(b) && b.dateISO === date && (courtId === 'exclusive' || b.courtId === 'exclusive' || b.courtId === courtId) && b.minutes.some(function (m) { return minutes.indexOf(m) >= 0; }); });
@@ -207,7 +209,7 @@ function hydrateImages_(value, chunks) {
   hydrate(value, 'instapayQr'); hydrate(value, 'heroImage'); (value.courts || []).forEach(function (court) { hydrate(court, 'image'); });
 }
 const BOOKING_HEADERS = ['reference', 'name', 'courtId', 'court', 'dateISO', 'date', 'timesJson', 'minutesJson', 'duration', 'amount', 'status', 'createdAt', 'paidAt'];
-function readBookings_() { const sh = sheet_('Bookings', BOOKING_HEADERS), rows = sh.getDataRange().getValues(); return rows.slice(1).filter(function (r) { return r[0]; }).map(function (r) { const times = JSON.parse(r[6] || '[]'), minutes = JSON.parse(r[7] || '[]'); return { reference: r[0], name: r[1], courtId: r[2], court: r[3], dateISO: r[4], date: r[5], times: times, time: times.join(', '), minutes: minutes, duration: Number(r[8]), amount: Number(r[9]), status: r[10], createdAt: r[11], paidAt: r[12] || '' }; }); }
+function readBookings_() { const sh = sheet_('Bookings', BOOKING_HEADERS), rows = sh.getDataRange().getValues(), timeZone = sh.getParent().getSpreadsheetTimeZone() || BOOKING_TIME_ZONE; return rows.slice(1).filter(function (r) { return r[0]; }).map(function (r) { const times = JSON.parse(r[6] || '[]'), minutes = JSON.parse(r[7] || '[]'), dateISO = normalizeDateISO_(r[4], timeZone); return { reference: r[0], name: r[1], courtId: r[2], court: r[3], dateISO: dateISO, date: validDate_(dateISO) ? formatDate_(dateISO) : String(r[5] || ''), times: times, time: times.join(', '), minutes: minutes, duration: Number(r[8]), amount: Number(r[9]), status: r[10], createdAt: r[11], paidAt: r[12] || '' }; }); }
 function appendBooking_(b) { sheet_('Bookings', BOOKING_HEADERS).appendRow([b.reference, b.name, b.courtId, b.court, b.dateISO, b.date, JSON.stringify(b.times), JSON.stringify(b.minutes), b.duration, b.amount, b.status, b.createdAt, b.paidAt]); }
 function updateBooking_(reference, change) { const sh = sheet_('Bookings', BOOKING_HEADERS), rows = sh.getDataRange().getValues(); for (let i = 1; i < rows.length; i++) if (rows[i][0] === reference) { const b = readBookings_().find(function (x) { return x.reference === reference; }); change(b); sh.getRange(i + 1, 11, 1, 3).setValues([[b.status, b.createdAt, b.paidAt]]); return; } }
 function deleteBooking_(reference) {
