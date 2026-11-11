@@ -45,7 +45,7 @@ function route_(packet) {
     const date = query.date || '', courtId = query.courtId || '';
     if (!validDate_(date) || !courtId) return fail_(400, 'Choose a valid date and court.');
     const booked = readBookings_().filter(function (b) {
-      return b.status === 'Paid' && b.dateISO === date && (courtId === 'exclusive' || b.courtId === courtId || b.courtId === 'exclusive');
+      return bookingBlocksTime_(b) && b.dateISO === date && (courtId === 'exclusive' || b.courtId === courtId || b.courtId === 'exclusive');
     }).reduce(function (all, b) { return all.concat(b.minutes); }, []);
     return ok_({ booked: Array.from(new Set(booked)) });
   }
@@ -130,6 +130,8 @@ function route_(packet) {
   return fail_(404, 'API route not found.');
 }
 
+function bookingBlocksTime_(booking) { return ['paid', 'confirmed', 'booked'].indexOf(String(booking.status || '').trim().toLowerCase()) >= 0; }
+
 function createBooking_(body) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) return fail_(503, 'Bookings are busy. Please try again.');
@@ -144,7 +146,7 @@ function createBooking_(body) {
     minutes.sort(function (a, b) { return a - b; });
     if (courtId === 'exclusive' && minutes.length > 1) return fail_(400, 'Exclusive court bookings must be reserved one hour at a time.');
     const rows = readBookings_();
-    const clash = rows.some(function (b) { return b.status === 'Paid' && b.dateISO === date && (courtId === 'exclusive' || b.courtId === 'exclusive' || b.courtId === courtId) && b.minutes.some(function (m) { return minutes.indexOf(m) >= 0; }); });
+    const clash = rows.some(function (b) { return bookingBlocksTime_(b) && b.dateISO === date && (courtId === 'exclusive' || b.courtId === 'exclusive' || b.courtId === courtId) && b.minutes.some(function (m) { return minutes.indexOf(m) >= 0; }); });
     if (clash) return fail_(409, 'That time was just booked. Please choose another available time.');
     const labels = minutes.map(formatTime_), amount = minutes.reduce(function (sum, minute) { return sum + Number(minute < 1020 ? court.dayRate : court.nightRate); }, 0);
     const booking = { reference: 'SP-' + Utilities.getUuid().replace(/-/g, '').toUpperCase(), name: name, courtId: courtId, court: court.name, dateISO: date, date: formatDate_(date), times: labels, time: labels.join(', '), minutes: minutes, duration: minutes.length, amount: amount, status: 'Awaiting payment', createdAt: new Date().toISOString(), paidAt: '' };
@@ -244,7 +246,7 @@ function markPaid_(reference) {
     const bookings = readBookings_(), booking = bookings.find(function (b) { return b.reference === reference; });
     if (!booking) return fail_(404, 'Booking not found.');
     const conflict = bookings.some(function (other) {
-      return other.reference !== reference && other.status === 'Paid' && other.dateISO === booking.dateISO &&
+      return other.reference !== reference && bookingBlocksTime_(other) && other.dateISO === booking.dateISO &&
         (booking.courtId === 'exclusive' || other.courtId === 'exclusive' || other.courtId === booking.courtId) &&
         other.minutes.some(function (minute) { return booking.minutes.indexOf(minute) >= 0; });
     });
