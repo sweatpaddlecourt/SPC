@@ -133,7 +133,24 @@ function route_(packet) {
 
 function bookingBlocksTime_(booking) { return ['paid', 'confirmed', 'booked'].indexOf(String(booking.status || '').trim().toLowerCase()) >= 0; }
 
-function normalizeDateISO_(value, timeZone) { if (value instanceof Date && !isNaN(value.getTime())) return Utilities.formatDate(value, timeZone || BOOKING_TIME_ZONE, 'yyyy-MM-dd'); const text = String(value || '').trim(), match = text.match(/^\\d{4}-\\d{2}-\\d{2}/); return match ? match[0] : text; }\nfunction bookingClock_() { const stamp = Utilities.formatDate(new Date(), BOOKING_TIME_ZONE, 'yyyy-MM-dd HH:mm'), parts = stamp.split(' '), hm = parts[1].split(':').map(Number); return { dateISO: parts[0], minuteOfDay: hm[0] * 60 + hm[1] }; }\nfunction bookingTimeHasPassed_(dateISO, minutes) { const now = bookingClock_(); return dateISO < now.dateISO || (dateISO === now.dateISO && minutes.some(function (minute) { return minute < now.minuteOfDay; })); }\n\nfunction createBooking_(body) {
+function normalizeDateISO_(value, timeZone) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, timeZone || BOOKING_TIME_ZONE, 'yyyy-MM-dd');
+  }
+  const text = String(value || '').trim(), match = text.match(/^\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : text;
+}
+function bookingClock_() {
+  const stamp = Utilities.formatDate(new Date(), BOOKING_TIME_ZONE, 'yyyy-MM-dd HH:mm');
+  const parts = stamp.split(' '), hm = parts[1].split(':').map(Number);
+  return { dateISO: parts[0], minuteOfDay: hm[0] * 60 + hm[1] };
+}
+function bookingTimeHasPassed_(dateISO, minutes) {
+  const now = bookingClock_();
+  return dateISO < now.dateISO || (dateISO === now.dateISO && minutes.some(function (minute) { return minute < now.minuteOfDay; }));
+}
+
+function createBooking_(body) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) return fail_(503, 'Bookings are busy. Please try again.');
   try {
