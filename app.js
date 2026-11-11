@@ -3,8 +3,13 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const modal = $('#modal'), modalContent = $('#modalContent');
   const dateInput = $('#date');
-  const today = new Date();
-  const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const BOOKING_TIME_ZONE = 'Asia/Manila';
+  function bookingClock() {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: BOOKING_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date());
+    const value = type => parts.find(part => part.type === type).value;
+    return { dateISO: value('year') + '-' + value('month') + '-' + value('day'), minuteOfDay: Number(value('hour')) * 60 + Number(value('minute')) };
+  }
+  const localDate = bookingClock().dateISO;
   dateInput.min = localDate;
   dateInput.value = localDate;
   let settings = { courts: [], instapayUrl: '', instapayQr: '', heroImage: '' };
@@ -110,15 +115,17 @@
 
   function openBooking(courtId) {
     const court = settings.courts.find(item => item.id === courtId); if (!court) return;
-    openModal(`<h2 id="modalTitle">Book ${escapeHtml(court.name)}</h2><p>Choose one or more open hours, then enter your name.</p><div class="summary"><b>${escapeHtml(court.name)}</b><br>${escapeHtml(court.location || 'Sweat Paddle Court')}</div><div class="modal-fields"><label>Date<input id="bookingDate" type="date" min="${localDate}" value="${localDate}" required></label><div><label>Available times · select multiple</label><div class="slots" id="bookingSlots"></div></div><label>Your name<input id="bookingName" maxlength="80" required autocomplete="name" placeholder="Name"></label></div><p id="bookingPrice" class="payment-help">Select times to see your total.</p><p id="bookingError" class="payment-help" role="alert"></p><button class="pill" id="submitBooking">Continue to payment →</button>`);
+    const bookingDay = bookingClock().dateISO;
+    openModal(`<h2 id="modalTitle">Book ${escapeHtml(court.name)}</h2><p>Choose one or more open hours, then enter your name.</p><div class="summary"><b>${escapeHtml(court.name)}</b><br>${escapeHtml(court.location || 'Sweat Paddle Court')}</div><div class="modal-fields"><label>Date<input id="bookingDate" type="date" min="${bookingDay}" value="${bookingDay}" required></label><div><label>Available times · select multiple</label><div class="slots" id="bookingSlots"></div></div><label>Your name<input id="bookingName" maxlength="80" required autocomplete="name" placeholder="Name"></label></div><p id="bookingPrice" class="payment-help">Select times to see your total.</p><p id="bookingError" class="payment-help" role="alert"></p><button class="pill" id="submitBooking">Continue to payment →</button>`);
     const date = $('#bookingDate'), slotBox = $('#bookingSlots'), price = $('#bookingPrice'), error = $('#bookingError'), selected = new Map();
     async function loadSlots(reset = false) {
       if (reset) selected.clear(); slotBox.textContent = 'Loading availability…';
       try {
         const data = await api(`/api/availability?date=${encodeURIComponent(date.value)}&courtId=${encodeURIComponent(courtId)}`), busy = new Set(data.booked);
         slotBox.replaceChildren(); let openCount = 0;
+        const now = bookingClock();
         for (const slot of timeChoices) {
-          const button = document.createElement('button'); button.type = 'button'; button.className = 'slot'; button.textContent = `${slot.label}${busy.has(slot.start) ? ' · Booked' : ''}`; button.disabled = busy.has(slot.start);
+          const button = document.createElement('button'); button.type = 'button'; button.className = 'slot'; const isPast = date.value === now.dateISO && slot.start < now.minuteOfDay, isBooked = busy.has(slot.start); button.textContent = `${slot.label}${isBooked ? ' · Booked' : isPast ? ' · Past' : ''}`; button.disabled = isBooked || isPast;
           if (button.disabled) selected.delete(slot.start);
           else { openCount++; if (selected.has(slot.start)) button.classList.add('selected'); }
           button.addEventListener('click', () => { if (selected.has(slot.start)) { selected.delete(slot.start); button.classList.remove('selected'); } else { selected.set(slot.start, slot.label); button.classList.add('selected'); } updatePrice(); }); slotBox.append(button);
@@ -138,7 +145,7 @@
       if (name.length < 2 || !times.length) return showNotice(error, 'Enter your name and choose at least one hour.');
       const button = $('#submitBooking'); button.disabled = true; button.textContent = 'Reserving…';
       try { const data = await post('/api/bookings', { name, courtId, dateISO: date.value, times }); closeModal(); showPayment(data.booking, data.settings); }
-      catch (err) { showNotice(error, err.message); button.disabled = false; button.textContent = 'Continue to payment →'; if (err.message.includes('just booked')) await loadSlots(); }
+      catch (err) { showNotice(error, err.message); button.disabled = false; button.textContent = 'Continue to payment →'; if (err.message.includes('just booked') || err.message.includes('already passed')) await loadSlots(); }
     });
     loadSlots(true);
   }
