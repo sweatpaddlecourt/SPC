@@ -376,6 +376,21 @@
   $('#showVenueMap').addEventListener('click', () => {
     const frame = document.createElement('iframe'); frame.className = 'venue-map-frame'; frame.title = 'Map to Sweat Paddle Court in Talisay City'; frame.loading = 'lazy'; frame.referrerPolicy = 'no-referrer-when-downgrade'; frame.src = 'https://www.google.com/maps?q=10.263861,123.816417&output=embed'; $('#mapStage').prepend(frame); $('#showVenueMap').hidden = true; $('#mapDirections').hidden = false;
   });
+  let publicContentReady = false, introFinished = false, introCheckScheduled = false;
+  const introStartedAt = Date.now();
+  function finishIntro() {
+    if (introFinished) return; introFinished = true;
+    const loader = $('#siteLoader');
+    if (loader) { loader.classList.add('is-done'); window.setTimeout(() => loader.remove(), 650); }
+  }
+  function checkIntroReadiness() {
+    if (introFinished) return;
+    const elapsed = Date.now() - introStartedAt, images = Array.from(document.images);
+    images.forEach(image => { if (image.loading === 'lazy') image.loading = 'eager'; });
+    const allImagesLoaded = images.every(image => image.complete);
+    if ((publicContentReady && allImagesLoaded && elapsed >= 1600) || elapsed >= 8500) { finishIntro(); return; }
+    if (!introCheckScheduled) { introCheckScheduled = true; window.setTimeout(() => { introCheckScheduled = false; checkIntroReadiness(); }, 100); }
+  }
   async function loadPublicSettings() {
     const retry = $('#retryPublicData'); if (retry) { retry.disabled = true; retry.textContent = 'Connecting…'; }
     try {
@@ -388,15 +403,14 @@
         if (!notice) { notice = document.createElement('p'); notice.id = 'publicRefreshNotice'; notice.className = 'payment-help'; $('#courtGrid').before(notice); }
         notice.textContent = 'Showing saved court details. Live booking could not connect; availability will be checked when you book.';
       }
-    }
+    } finally { publicContentReady = true; checkIntroReadiness(); }
   }
   $('#courtGrid').addEventListener('click', event => { if (event.target.closest('#retryPublicData')) loadPublicSettings(); });
   function start() {
     const cached = readPublicCache();
-    if (cached) { settings = cached.settings; adminSetupRequired = cached.adminSetupRequired; refreshPublic(); }
+    if (cached) { settings = cached.settings; adminSetupRequired = cached.adminSetupRequired; refreshPublic(); publicContentReady = true; }
     else $('#courtGrid').innerHTML = '<div class="empty-state court-empty"><span class="empty-courts-icon">…</span><h2>Loading courts</h2><p>Getting the latest court hours and prices.</p></div>';
-    const loader = $('#siteLoader');
-    if (loader) window.setTimeout(() => { loader.classList.add('is-done'); window.setTimeout(() => loader.remove(), 650); }, 1850);
+    checkIntroReadiness();
     loadPublicSettings();
   }
   start();
