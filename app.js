@@ -15,6 +15,7 @@
   let settings = { courts: [], instapayUrl: '', instapayQr: '', heroImage: '' };
   let adminSetupRequired = true;
   let adminEmail = '';
+  let adminDashboardData = null;
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
   function openModal(html, admin = false) {
@@ -49,7 +50,7 @@
       const timeout = window.setTimeout(() => { cleanup(); reject(new Error('Google Sheets did not respond. Check the Apps Script deployment and try again.')); }, 30000);
       window.addEventListener('message', onMessage); document.body.append(frame, form); form.submit();
     });
-    if (response.status < 200 || response.status >= 300) throw new Error(response.error || `Request failed (${response.status}).`);
+    if (response.status < 200 || response.status >= 300) { const error = new Error(response.error || `Request failed (${response.status}).`); error.status = response.status; throw error; }
     if ((path === '/api/admin/setup' || path === '/api/admin/login') && response.token) sessionStorage.setItem('sp_admin_token', response.token);
     if (path === '/api/admin/logout') sessionStorage.removeItem('sp_admin_token');
     return response;
@@ -177,8 +178,19 @@
     });
   }
   async function openAdmin() {
-    try { const data = await api('/api/admin/me'); adminEmail = data.user.email; await renderAdmin(); }
-    catch { const data = await api('/api/public'); adminSetupRequired = data.adminSetupRequired; adminLogin(); }
+    openModal('<h2 id="modalTitle">Admin dashboard</h2><p>Opening your admin panel…</p><div class="empty-state" role="status">Loading admin data…</div>', true);
+    try {
+      const data = await api('/api/admin/me'); adminEmail = data.user.email; await renderAdmin();
+    } catch (error) {
+      if (error.status === 401 || error.status === 403) {
+        try { const data = await api('/api/public'); adminSetupRequired = data.adminSetupRequired; adminLogin(); }
+        catch (loadError) { showAdminLoadError(loadError.message); }
+      } else showAdminLoadError(error.message);
+    }
+  }
+  function showAdminLoadError(message) {
+    openModal(`<h2 id="modalTitle">Admin dashboard</h2><p>We couldn’t load the admin data.</p><p class="payment-help" role="alert">${escapeHtml(message)}</p><button class="pill" id="adminRetry">Try again</button>`, true);
+    $('#adminRetry').addEventListener('click', openAdmin);
   }
   function imageFileData(file) {
     return new Promise((resolve, reject) => {
@@ -194,8 +206,10 @@
     const photo = safeImage(court.image);
     return '<div class="admin-court-item" data-court-id="' + escapeHtml(court.id) + '"><article class="admin-court-card"><div class="admin-court-image">' + (photo ? '<img src="' + photo + '" alt="' + escapeHtml(court.name) + ' at Sweat Paddle Court">' : '<div class="admin-court-placeholder" aria-hidden="true"><span>YOUR NEXT RALLY</span><small>SWEAT PADDLE COURT</small></div>') + '</div><div class="admin-court-overlay"><div class="admin-court-title"><strong>' + escapeHtml(court.name) + '</strong><span>' + escapeHtml(court.location || 'Sweat Paddle Court') + '</span></div><div class="admin-court-actions"><button type="button" data-edit-court aria-label="Edit ' + escapeHtml(court.name) + '">Edit</button><button type="button" class="delete" data-delete-court="' + escapeHtml(court.id) + '" data-court-name="' + escapeHtml(court.name) + '" aria-label="Delete ' + escapeHtml(court.name) + '">Delete</button></div></div></article><div class="admin-court-editor" hidden>' + courtForm(court) + '</div></div>';
   }
-  async function renderAdmin() {
-    const data = await api('/api/admin/dashboard'); settings = data.settings; adminEmail = data.user.email;
+  async function renderAdmin(options = {}) {
+    const activeTab = options.activeTab || modalContent.querySelector('[data-booking-tab].active')?.dataset.bookingTab || 'pending';
+    const data = options.useCache && adminDashboardData ? adminDashboardData : await api('/api/admin/dashboard');
+    adminDashboardData = data; settings = data.settings; adminEmail = data.user.email;
     const courtItems = settings.courts.map(adminCourtItem).join('');
     const adminBookings = data.bookings.filter(booking => /^cancel/i.test(booking.status || '') || booking.paymentReference || booking.hasReceipt);
     const pendingBookings = adminBookings.filter(booking => !/^cancel/i.test(booking.status || '') && booking.status !== 'Paid');
@@ -210,8 +224,8 @@
       ['paid', 'Paid', paidBookings],
       ['cancelled', 'Cancelled', cancelledBookings]
     ];
-    const bookingTabs = bookingSectionData.map(([id, label, bookings], index) => `<button type="button" class="admin-booking-tab${index === 0 ? ' active' : ''}" data-booking-tab="${id}" aria-pressed="${index === 0}">${label}<span>${bookings.length}</span></button>`).join('');
-    const bookingSections = bookingSectionData.map(([id, label, bookings], index) => `<section class="admin-booking-section" data-booking-section="${id}"${index === 0 ? '' : ' hidden'}><h4>${label} (${bookings.length})</h4>${bookingTable(bookings)}</section>`).join('');
+    const bookingTabs = bookingSectionData.map(([id, label, bookings]) => { const active = id === activeTab; return `<button type="button" class="admin-booking-tab${active ? ' active' : ''}" data-booking-tab="${id}" aria-pressed="${active}">${label}<span>${bookings.length}</span></button>`; }).join('');
+    const bookingSections = bookingSectionData.map(([id, label, bookings]) => `<section class="admin-booking-section" data-booking-section="${id}"${id === activeTab ? '' : ' hidden'}><h4>${label} (${bookings.length})</h4>${bookingTable(bookings)}</section>`).join('');
     openModal(`<h2 id="modalTitle">Admin dashboard</h2><p>Signed in as <b>${escapeHtml(adminEmail)}</b> · <button id="adminLogout" type="button">Sign out</button></p><div class="admin-box court-manager"><div class="admin-court-head"><h3>Courts</h3></div><div id="addCourtPanel" hidden>${courtForm()}</div><div id="courtEditorPanel" class="court-editor-top" hidden></div><div class="admin-court-grid">${courtItems || '<div class="empty-state">No courts yet.</div>'}<button class="admin-add-court" id="addCourtToggle" type="button" aria-label="Add a court" aria-expanded="false"><svg class="admin-add-court-icon" viewBox="0 0 320 320" role="img" aria-label="Add a court"><circle cx="160" cy="160" r="150" fill="#009499"/><path d="M160 82v156M82 160h156" fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round"/></svg></button></div></div><div class="admin-grid"><div class="admin-box"><h3>Payment and homepage settings</h3><label for="adminPayLink">HTTPS payment link</label><input id="adminPayLink" type="url" placeholder="https://…" value="${escapeHtml(settings.instapayUrl || '')}"><label for="adminQr">InstaPay QR (PNG, JPEG or WebP; 3 MB max)</label><input id="adminQr" type="file" accept="image/png,image/jpeg,image/webp"><label for="adminHeroImage">Homepage photo (optional)</label><input id="adminHeroImage" type="file" accept="image/png,image/jpeg,image/gif,image/webp"><div id="settingsMessage" class="payment-help" role="status"></div><button class="pill" id="saveSettings">Save settings</button></div><div class="admin-box"><h3>Change admin account</h3><label for="newAdminEmail">Email</label><input id="newAdminEmail" type="email" maxlength="254" value="${escapeHtml(adminEmail)}"><label for="currentAdminPassword">Current password</label><input id="currentAdminPassword" type="password" autocomplete="current-password"><label for="newAdminPassword">New password (leave empty to keep it)</label><input id="newAdminPassword" type="password" minlength="12" maxlength="200" autocomplete="new-password"><div id="passwordMessage" class="payment-help" role="status"></div><button class="pill" id="saveAccount">Update account</button></div></div><div class="admin-box"><h3>Bookings (${adminBookings.length})</h3><div id="bookingAdminNotice" class="payment-help" role="status"></div><div class="admin-booking-tabs" role="group" aria-label="Filter bookings by status">${bookingTabs}</div>${bookingSections}</div>`, true);
     modalContent.querySelectorAll('[data-booking-tab]').forEach(button => button.addEventListener('click', () => {
       const selectedTab = button.dataset.bookingTab;
@@ -309,8 +323,31 @@
         adminEmail = result.user.email; showNotice(message, 'Admin account updated.', false); await renderAdmin();
       } catch (error) { showNotice(message, error.message); }
     });
-    modalContent.querySelectorAll('[data-paid]').forEach(button => button.addEventListener('click', async () => { try { const result = await patch(`/api/admin/bookings/${encodeURIComponent(button.dataset.paid)}`, { status: 'Paid' }); await renderAdmin(); if (result.cancelled) showNotice($('#bookingAdminNotice'), result.message, false); } catch (error) { showError(error.message); } }));
-    modalContent.querySelectorAll('[data-cancel-booking]').forEach(button => button.addEventListener('click', async () => { try { await patch(`/api/admin/bookings/${encodeURIComponent(button.dataset.cancelBooking)}`, { status: 'Cancelled' }); await renderAdmin(); } catch (error) { showError(error.message); } }));
+    async function saveBookingStatus(reference, status, tab) {
+      const booking = adminDashboardData?.bookings.find(item => item.reference === reference);
+      if (!booking) { showNotice($('#bookingAdminNotice'), 'Booking data is unavailable. Reload the admin panel and try again.'); return; }
+      const previousStatus = booking.status;
+      booking.status = status;
+      await renderAdmin({ useCache: true, activeTab: tab });
+      try {
+        const result = await patch(`/api/admin/bookings/${encodeURIComponent(reference)}`, { status });
+        if (result.cancelled) {
+          try { adminDashboardData = await api('/api/admin/dashboard'); }
+          catch (refreshError) { showNotice($('#bookingAdminNotice'), `Saved, but the refreshed data could not load: ${refreshError.message}`); return; }
+          await renderAdmin({ useCache: true, activeTab: 'cancelled' });
+          if (result.message) showNotice($('#bookingAdminNotice'), result.message, false);
+        } else {
+          try { adminDashboardData = await api('/api/admin/dashboard'); await renderAdmin({ useCache: true, activeTab: tab }); }
+          catch (refreshError) { showNotice($('#bookingAdminNotice'), `Saved successfully. The latest data could not refresh: ${refreshError.message}`); }
+        }
+      } catch (error) {
+        booking.status = previousStatus;
+        await renderAdmin({ useCache: true, activeTab: /^cancel/i.test(previousStatus || '') ? 'cancelled' : previousStatus === 'Paid' ? 'paid' : 'pending' });
+        showNotice($('#bookingAdminNotice'), error.message);
+      }
+    }
+    modalContent.querySelectorAll('[data-paid]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.paid, 'Paid', 'paid')));
+    modalContent.querySelectorAll('[data-cancel-booking]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.cancelBooking, 'Cancelled', 'cancelled')));
     modalContent.querySelectorAll('[data-payment-proof]').forEach(button => button.addEventListener('click', async () => { try { const proof = await post('/api/admin/bookings/proof', { reference: button.dataset.paymentProof }); const proofImage = safeImage(proof.receiptImage); openModal(`<h2 id="modalTitle">Payment proof</h2><p>Booking ${escapeHtml(button.dataset.paymentProof)}</p>${proof.paymentReference ? `<div class="payment-reference">Payment reference: ${escapeHtml(proof.paymentReference)}</div>` : ''}${proofImage ? `<img class="admin-proof-image" src="${proofImage}" alt="Customer payment receipt"><a class="payment-qr-download" href="${proofImage}" download="payment-receipt-${encodeURIComponent(button.dataset.paymentProof)}">Download receipt image</a>` : '<p>No receipt image was uploaded.</p>'}<button class="pill" data-close-modal>Close</button>`, true); } catch (error) { showError(error.message); } }));
     modalContent.querySelectorAll('[data-receipt]').forEach(button => button.addEventListener('click', () => printReceipt(data.bookings.find(item => item.reference === button.dataset.receipt))));
   }
