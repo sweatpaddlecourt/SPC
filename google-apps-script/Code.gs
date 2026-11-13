@@ -86,7 +86,7 @@ function route_(packet) {
     if (!user) return fail_(401, 'Admin sign-in required.');
     if (method === 'GET' && path === '/api/admin/dashboard') {
       const proofs = readBookingProofSummaries_();
-      const bookings = readBookings_().map(function (booking) { const proof = proofs[booking.reference] || {}; booking.paymentReference = proof.paymentReference || ''; booking.hasReceipt = Boolean(proof.hasReceipt); return booking; }).filter(function (booking) { return Boolean(booking.paymentReference || booking.hasReceipt); });
+      const bookings = readBookings_().map(function (booking) { const proof = proofs[booking.reference] || {}; booking.paymentReference = proof.paymentReference || ''; booking.hasReceipt = Boolean(proof.hasReceipt); return booking; }).filter(function (booking) { return Boolean(booking.paymentReference || booking.hasReceipt) || /^cancel/i.test(booking.status || ''); });
       return ok_({ settings: settings, bookings: bookings.sort(function (a, b) { return b.createdAt.localeCompare(a.createdAt); }), user: user });
     }
     if (method === 'POST' && path === '/api/admin/bookings/proof') {
