@@ -396,7 +396,7 @@
     if (cached) { settings = cached.settings; adminSetupRequired = cached.adminSetupRequired; refreshPublic(); }
     else $('#courtGrid').innerHTML = '<div class="empty-state court-empty"><span class="empty-courts-icon">…</span><h2>Loading courts</h2><p>Getting the latest court hours and prices.</p></div>';
     const loader = $('#siteLoader');
-    if (loader) window.setTimeout(() => { loader.classList.add('is-done'); window.setTimeout(() => loader.remove(), 650); }, 300);
+    if (loader) window.setTimeout(() => { loader.classList.add('is-done'); window.setTimeout(() => loader.remove(), 650); }, 1850);
     loadPublicSettings();
   }
   start();
