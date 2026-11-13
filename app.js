@@ -137,7 +137,7 @@
           button.addEventListener('click', () => { if (selected.has(slot.start)) { selected.delete(slot.start); button.classList.remove('selected'); } else { selected.set(slot.start, slot.label); button.classList.add('selected'); } updatePrice(); updatePendingWarning(); }); slotBox.append(button);
         }
         if (!openCount) slotBox.textContent = 'No times left for this date.';
-        updatePrice();
+        updatePrice(); updatePendingWarning();
       } catch (err) { slotBox.textContent = 'Availability could not load. Please refresh and try again.'; showNotice(error, err.message); }
     }
     function updatePrice() {
