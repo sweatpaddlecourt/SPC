@@ -125,7 +125,7 @@
         slotBox.replaceChildren(); let openCount = 0;
         const now = bookingClock();
         for (const slot of timeChoices) {
-          const button = document.createElement('button'); button.type = 'button'; button.className = 'slot'; const isPast = date.value === now.dateISO && slot.start < now.minuteOfDay, isBooked = busy.has(slot.start); if (isBooked) button.classList.add('booked'); button.textContent = `${slot.label}${isBooked ? ' · Booked' : isPast ? ' · Past' : ''}`; button.disabled = isBooked || isPast;
+          const button = document.createElement('button'); button.type = 'button'; button.className = 'slot'; const isPast = date.value === now.dateISO && slot.start < now.minuteOfDay, isBooked = busy.has(slot.start); if (isBooked) { button.classList.add('booked'); button.style.backgroundColor = '#f8652a'; button.style.borderColor = '#f8652a'; button.style.color = '#fff'; button.style.opacity = '1'; } button.textContent = `${slot.label}${isBooked ? ' · Booked' : isPast ? ' · Past' : ''}`; button.disabled = isBooked || isPast;
           if (button.disabled) selected.delete(slot.start);
           else { openCount++; if (selected.has(slot.start)) button.classList.add('selected'); }
           button.addEventListener('click', () => { if (selected.has(slot.start)) { selected.delete(slot.start); button.classList.remove('selected'); } else { selected.set(slot.start, slot.label); button.classList.add('selected'); } updatePrice(); }); slotBox.append(button);
