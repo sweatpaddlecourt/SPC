@@ -277,6 +277,11 @@ function markPaid_(reference) {
         other.minutes.some(function (minute) { return booking.minutes.indexOf(minute) >= 0; });
     });
     if (conflict) return fail_(409, 'This booking conflicts with a paid booking and cannot be marked paid.');
+    const proof = readBookingProof_(reference);
+    if (!proof.paymentReference && !proof.receiptImage) {
+      updateBooking_(reference, function (row) { row.status = 'Cancelled'; row.paidAt = ''; });
+      return ok_({ ok: true, cancelled: true, message: 'No payment proof was submitted. The booking was cancelled and its time is available again.' });
+    }
     updateBooking_(reference, function (row) { row.status = 'Paid'; row.paidAt = new Date().toISOString(); });
     return ok_({ ok: true });
   } finally { lock.releaseLock(); }
