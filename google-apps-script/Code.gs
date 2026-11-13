@@ -126,6 +126,7 @@ function route_(packet) {
       const ref = decodeURIComponent(bookingMatch[1]);
       if (method === 'DELETE') deleteBooking_(ref);
       else if (body.status === 'Paid') return markPaid_(ref);
+      else if (body.status === 'Cancelled') return cancelBooking_(ref);
       else return fail_(400, 'Unsupported booking status.');
       return ok_({ ok: true });
     }
@@ -265,6 +266,18 @@ function readBookingProof_(reference) {
   matched.forEach(function (row) { if (row[2] !== '' && row[2] !== null) parts[Number(row[2])] = String(row[3] || ''); });
   return { paymentReference: matched.length ? String(matched[0][1] || '') : '', receiptImage: parts.join('') };
 }
+function cancelBooking_(reference) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return fail_(503, 'Bookings are busy. Please try again.');
+  try {
+    const booking = readBookings_().find(function (item) { return item.reference === reference; });
+    if (!booking) return fail_(404, 'Booking not found.');
+    if (String(booking.status || '').toLowerCase() === 'cancelled') return ok_({ ok: true, cancelled: true });
+    updateBooking_(reference, function (row) { row.status = 'Cancelled'; });
+    return ok_({ ok: true, cancelled: true });
+  } finally { lock.releaseLock(); }
+}
+
 function markPaid_(reference) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) return fail_(503, 'Bookings are busy. Please try again.');
