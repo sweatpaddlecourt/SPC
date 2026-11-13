@@ -167,7 +167,11 @@ function createBooking_(body) {
     const rows = readBookings_();
     const clash = rows.some(function (b) { return bookingBlocksTime_(b) && b.dateISO === date && (courtId === 'exclusive' || b.courtId === 'exclusive' || b.courtId === courtId) && b.minutes.some(function (m) { return minutes.indexOf(m) >= 0; }); });
     if (clash) return fail_(409, 'That time was just booked. Please choose another available time.');
-    const labels = minutes.map(formatTime_), amount = minutes.reduce(function (sum, minute) { return sum + Number(minute < 1020 ? court.dayRate : court.nightRate); }, 0);
+    const opening = Number.isInteger(Number(court.openingMinute)) ? Number(court.openingMinute) : 300;
+    const closing = Number.isInteger(Number(court.closingMinute)) ? Number(court.closingMinute) : 1320;
+    const priceChange = Number.isInteger(Number(court.priceChangeMinute)) ? Number(court.priceChangeMinute) : 1020;
+    if (minutes.some(function (minute) { return minute < opening || minute + 60 > closing; })) return fail_(400, 'Selected hours fall outside this court opening schedule. Refresh and choose an open time.');
+    const labels = minutes.map(formatTime_), amount = minutes.reduce(function (sum, minute) { return sum + Number(minute < priceChange ? court.dayRate : court.nightRate); }, 0);
     const booking = { reference: 'SP-' + Utilities.getUuid().replace(/-/g, '').toUpperCase(), name: name, courtId: courtId, court: court.name, dateISO: date, date: formatDate_(date), times: labels, time: labels.join(', '), minutes: minutes, duration: minutes.length, amount: amount, status: 'Awaiting payment', createdAt: new Date().toISOString(), paidAt: '' };
     appendBooking_(booking);
     return ok_({ booking: booking, settings: settings }, 201);
@@ -275,10 +279,15 @@ function markPaid_(reference) {
   } finally { lock.releaseLock(); }
 }
 function findBooking_(reference, name) { const b = readBookings_().find(function (x) { return x.reference === String(reference || '').trim() && x.name.toLowerCase() === String(name || '').trim().toLowerCase(); }); return b || null; }
-function normalizeCourt_(input) { const name = String(input.name || '').trim().slice(0, 80), dayRate = Number(input.dayRate), nightRate = Number(input.nightRate); if (!name || !Number.isFinite(dayRate) || dayRate < 1 || !Number.isFinite(nightRate) || nightRate < 1) return null; return { id: input.id || Utilities.getUuid(), name: name, location: String(input.location || '').slice(0, 160), dayRate: dayRate, nightRate: nightRate, displayPrice: Number(input.displayPrice) || dayRate, maxPlayers: Number(input.maxPlayers) || 10, description: String(input.description || '').slice(0, 1000), image: validImage_(input.image) ? input.image : '' }; }
+function normalizeCourt_(input) {
+  const name = String(input.name || '').trim().slice(0, 80), dayRate = Number(input.dayRate), nightRate = Number(input.nightRate);
+  const openingMinute = input.openingMinute === undefined ? 300 : Number(input.openingMinute), closingMinute = input.closingMinute === undefined ? 1320 : Number(input.closingMinute), priceChangeMinute = input.priceChangeMinute === undefined ? 1020 : Number(input.priceChangeMinute);
+  if (!name || !Number.isFinite(dayRate) || dayRate < 1 || !Number.isFinite(nightRate) || nightRate < 1 || !Number.isInteger(openingMinute) || openingMinute < 0 || openingMinute >= 1440 || openingMinute % 60 || !Number.isInteger(closingMinute) || closingMinute <= openingMinute || closingMinute > 1440 || closingMinute % 60 || !Number.isInteger(priceChangeMinute) || priceChangeMinute < 0 || priceChangeMinute >= 1440 || priceChangeMinute % 60) return null;
+  return { id: input.id || Utilities.getUuid(), name: name, location: String(input.location || '').slice(0, 160), openingMinute: openingMinute, closingMinute: closingMinute, priceChangeMinute: priceChangeMinute, dayRate: dayRate, nightRate: nightRate, displayPrice: Number(input.displayPrice) || dayRate, maxPlayers: Number(input.maxPlayers) || 10, description: String(input.description || '').slice(0, 1000), image: validImage_(input.image) ? input.image : '' };
+}
 function validImage_(value) { return typeof value === 'string' && value.length <= 5000000 && /^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i.test(value); }
 function parseQuery_(url) { const query = {}; const part = url.split('?')[1] || ''; part.split('&').forEach(function (p) { if (!p) return; const pair = p.split('='); query[decodeURIComponent(pair[0])] = decodeURIComponent((pair[1] || '').replace(/\+/g, ' ')); }); return query; }
-function parseTime_(value) { const m = String(value).match(/^(0?[1-9]|1[0-2]):00\s*(AM|PM)$/i); if (!m) return null; let hour = Number(m[1]) % 12; if (m[2].toUpperCase() === 'PM') hour += 12; const minute = hour * 60; return minute < 300 || minute >= 1320 ? null : minute; }
+function parseTime_(value) { const m = String(value).match(/^(0?[1-9]|1[0-2]):00\s*(AM|PM)$/i); if (!m) return null; let hour = Number(m[1]) % 12; if (m[2].toUpperCase() === 'PM') hour += 12; return hour * 60; }
 function formatTime_(n) { const h = Math.floor(n / 60), hr = h % 12 || 12; return String(hr).padStart(2, '0') + ':00 ' + (h >= 12 ? 'PM' : 'AM'); }
 function formatDate_(iso) { const p = iso.split('-'); return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])).toLocaleDateString('en-PH', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }); }
 function validDate_(s) { if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false; const d = new Date(s + 'T00:00:00Z'); return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; }
