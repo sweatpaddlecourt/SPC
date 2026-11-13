@@ -244,11 +244,8 @@
     const frame = document.createElement('iframe'); frame.className = 'venue-map-frame'; frame.title = 'Map to Sweat Paddle Court in Talisay City'; frame.loading = 'lazy'; frame.referrerPolicy = 'no-referrer-when-downgrade'; frame.src = 'https://www.google.com/maps?q=10.263861,123.816417&output=embed'; $('#mapStage').prepend(frame); $('#showVenueMap').hidden = true; $('#mapDirections').hidden = false;
   });
   async function start() {
-    const loaderStartedAt = performance.now();
     try { const data = await api('/api/public'); settings = data.settings; adminSetupRequired = data.adminSetupRequired; refreshPublic(); }
     catch (error) { $('#courtGrid').innerHTML = `<div class="empty-state court-empty"><h2>Booking service unavailable</h2><p>${escapeHtml(error.message)} Start the Node server and open its website address.</p></div>`; }
-    const remainingLoaderTime = Math.max(0, 2000 - (performance.now() - loaderStartedAt));
-    if (remainingLoaderTime) await new Promise(resolve => window.setTimeout(resolve, remainingLoaderTime));
     const loader = $('#siteLoader');
     if (loader) { loader.classList.add('is-done'); window.setTimeout(() => loader.remove(), 650); }
   }
