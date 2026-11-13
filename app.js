@@ -70,7 +70,12 @@
     const hour24 = Math.floor(minute / 60), hour = hour24 % 12 || 12;
     return `${hour}:${String(minute % 60).padStart(2, '0')} ${hour24 >= 12 ? 'PM' : 'AM'}`;
   }
-  const timeChoices = Array.from({ length: 17 }, (_, index) => { const start = 300 + index * 60; return { start, label: `${formatTime(start)}–${formatTime(start + 60)}` }; });
+  function courtHours(court) { return { opening: Number.isInteger(Number(court.openingMinute)) ? Number(court.openingMinute) : 300, closing: Number.isInteger(Number(court.closingMinute)) ? Number(court.closingMinute) : 1320, priceChange: Number.isInteger(Number(court.priceChangeMinute)) ? Number(court.priceChangeMinute) : 1020 }; }
+  function timeChoicesFor(court) { const hours = courtHours(court), choices = []; for (let start = hours.opening; start + 60 <= hours.closing; start += 60) choices.push({ start, label: formatTime(start) + '–' + formatTime(start + 60) }); return choices; }
+  function rateFor(court, minute) { return Number(minute < courtHours(court).priceChange ? court.dayRate : court.nightRate); }
+  function timeInputValue(minute) { if (minute === 1440) minute = 0; return String(Math.floor(minute / 60)).padStart(2, '0') + ':' + String(minute % 60).padStart(2, '0'); }
+  function timeInputMinute(value, closing) { if (closing && value === '00:00') return 1440; const parts = value.split(':').map(Number); return parts[0] * 60 + parts[1]; }
+  function pricingRows(court) { const h = courtHours(court), rows = []; if (Math.min(h.priceChange, h.closing) > h.opening) rows.push(formatTime(h.opening) + ' - ' + formatTime(Math.min(h.priceChange, h.closing)) + ': <strong>' + money(court.dayRate) + '/hr</strong>'); if (h.closing > Math.max(h.opening, h.priceChange)) rows.push(formatTime(Math.max(h.opening, h.priceChange)) + ' - ' + formatTime(h.closing) + ': <strong>' + money(court.nightRate) + '/hr</strong>'); return rows.map(row => '<div>' + row + '</div>').join(''); }
 
   function renderHero() {
     const images = [settings.heroImage, ...settings.courts.map(court => court.image)].map(safeImage).filter(Boolean);
@@ -87,7 +92,7 @@
     }
     grid.innerHTML = settings.courts.map(court => {
       const photo = safeImage(court.image);
-      return `<article class="court-card"><div class="court-cover"><div class="cover-roof"></div><div class="cover-floor"></div><div class="cover-net"></div>${photo ? `<img src="${photo}" alt="${escapeHtml(court.name)} at Sweat Paddle Court">` : ''}<span class="court-badge">Daily · 5AM–10PM</span><span class="available-badge">Available</span></div><div class="court-body"><div class="court-title-row"><div><h2>${escapeHtml(court.name)}</h2><div class="court-loc">⌖ ${escapeHtml(court.location || 'Sweat Paddle Court')}</div></div><div class="court-price">${money(court.displayPrice || court.dayRate)}<small>/ hour</small></div></div><p class="court-desc">${escapeHtml(court.description || '')}</p><a class="details-link" href="#" data-details="${escapeHtml(court.id)}">See full description →</a><div class="time-pricing"><div class="pricing-head">₱ &nbsp;Time-Based Pricing</div><div>05:00 AM - 05:00 PM: <strong>${money(court.dayRate)}/hr</strong></div><div>05:00 PM - 10:00 PM: <strong>${money(court.nightRate)}/hr</strong></div></div><div class="court-foot"><span class="pax">♙ &nbsp;Up to ${escapeHtml(court.maxPlayers || 10)} pax</span><button class="book-now" data-book="${escapeHtml(court.id)}">Book Now</button></div></div></article>`;
+      return `<article class="court-card"><div class="court-cover"><div class="cover-roof"></div><div class="cover-floor"></div><div class="cover-net"></div>${photo ? `<img src="${photo}" alt="${escapeHtml(court.name)} at Sweat Paddle Court">` : ''}<span class="court-badge">Daily · ${formatTime(courtHours(court).opening)}–${formatTime(courtHours(court).closing)}</span><span class="available-badge">Available</span></div><div class="court-body"><div class="court-title-row"><div><h2>${escapeHtml(court.name)}</h2><div class="court-loc">⌖ ${escapeHtml(court.location || 'Sweat Paddle Court')}</div></div><div class="court-price">${money(court.displayPrice || court.dayRate)}<small>/ hour</small></div></div><p class="court-desc">${escapeHtml(court.description || '')}</p><a class="details-link" href="#" data-details="${escapeHtml(court.id)}">See full description →</a><div class="time-pricing"><div class="pricing-head">₱ &nbsp;Time-Based Pricing</div>${pricingRows(court)}</div><div class="court-foot"><span class="pax">♙ &nbsp;Up to ${escapeHtml(court.maxPlayers || 10)} pax</span><button class="book-now" data-book="${escapeHtml(court.id)}">Book Now</button></div></div></article>`;
     }).join('');
     grid.querySelectorAll('[data-book]').forEach(button => button.addEventListener('click', () => openBooking(button.dataset.book)));
     grid.querySelectorAll('[data-details]').forEach(link => link.addEventListener('click', event => {
@@ -124,7 +129,7 @@
         const data = await api(`/api/availability?date=${encodeURIComponent(date.value)}&courtId=${encodeURIComponent(courtId)}`), busy = new Set(data.booked);
         slotBox.replaceChildren(); let openCount = 0;
         const now = bookingClock();
-        for (const slot of timeChoices) {
+        for (const slot of timeChoicesFor(court)) {
           const button = document.createElement('button'); button.type = 'button'; button.className = 'slot'; const isPast = date.value === now.dateISO && slot.start < now.minuteOfDay, isBooked = busy.has(slot.start); if (isBooked) { button.classList.add('booked'); button.style.backgroundColor = '#f8652a'; button.style.borderColor = '#f8652a'; button.style.color = '#fff'; button.style.opacity = '1'; } button.textContent = `${slot.label}${isBooked ? ' · Booked' : isPast ? ' · Past' : ''}`; button.disabled = isBooked || isPast;
           if (button.disabled) selected.delete(slot.start);
           else { openCount++; if (selected.has(slot.start)) button.classList.add('selected'); }
@@ -136,7 +141,7 @@
     }
     function updatePrice() {
       const chosen = [...selected.entries()].sort((a, b) => a[0] - b[0]);
-      const total = chosen.reduce((sum, [minute]) => sum + (minute < 1020 ? Number(court.dayRate) : Number(court.nightRate)), 0);
+      const total = chosen.reduce((sum, [minute]) => sum + rateFor(court, minute), 0);
       price.textContent = chosen.length ? `${chosen.length} hour${chosen.length === 1 ? '' : 's'} · ${chosen.map(([minute]) => `${formatTime(minute)}–${formatTime(minute + 60)}`).join(', ')} · ${money(total)} total` : 'Select times to see your total.';
     }
     date.addEventListener('change', () => loadSlots(true));
@@ -182,7 +187,7 @@
     });
   }
   function courtForm(court = {}) {
-    return `<form class="admin-box courtForm" data-court-id="${escapeHtml(court.id || '')}"><h3>${court.id ? `Edit ${escapeHtml(court.name)}` : 'Add a court'}</h3><div class="admin-grid"><label>Name<input name="name" maxlength="80" required value="${escapeHtml(court.name || '')}" placeholder="Court 1"></label><label>Location / court type<input name="location" maxlength="160" value="${escapeHtml(court.location || '')}" placeholder="Covered court"></label><label>Day price/hour (₱)<input name="dayRate" type="number" min="1" max="100000" required value="${Number(court.dayRate) || 300}"></label><label>Night price/hour (₱)<input name="nightRate" type="number" min="1" max="100000" required value="${Number(court.nightRate) || 350}"></label><label>Card price/hour (₱)<input name="displayPrice" type="number" min="1" max="100000" value="${Number(court.displayPrice) || Number(court.dayRate) || 300}"></label><label>Maximum players<input name="maxPlayers" type="number" min="1" max="100" value="${Number(court.maxPlayers) || 10}"></label><label>Description<textarea name="description" maxlength="1000" rows="2">${escapeHtml(court.description || '')}</textarea></label><label>Court photo<input name="image" type="file" accept="image/png,image/jpeg,image/webp"></label></div><div class="payment-help formMessage" role="status"></div><button class="pill">${court.id ? 'Save court' : 'Add court'}</button></form>`;
+    return `<form class="admin-box courtForm" data-court-id="${escapeHtml(court.id || '')}"><h3>${court.id ? `Edit ${escapeHtml(court.name)}` : 'Add a court'}</h3><div class="admin-grid"><label>Name<input name="name" maxlength="80" required value="${escapeHtml(court.name || '')}" placeholder="Court 1"></label><label>Location / court type<input name="location" maxlength="160" value="${escapeHtml(court.location || '')}" placeholder="Covered court"></label><label>Opens at<input name="openingTime" type="time" step="3600" required value="${timeInputValue(courtHours(court).opening)}"></label><label>Closes at<input name="closingTime" type="time" step="3600" required value="${timeInputValue(courtHours(court).closing)}"><small>Choose 12:00 AM for midnight.</small></label><label>Day rate starts at<input name="priceChangeTime" type="time" step="3600" required value="${timeInputValue(courtHours(court).priceChange)}"><small>Day rate applies before this time; night rate starts here.</small></label><label>Day price/hour (₱)<input name="dayRate" type="number" min="1" max="100000" required value="${Number(court.dayRate) || 300}"></label><label>Night price/hour (₱)<input name="nightRate" type="number" min="1" max="100000" required value="${Number(court.nightRate) || 350}"></label><label>Card price/hour (₱)<input name="displayPrice" type="number" min="1" max="100000" value="${Number(court.displayPrice) || Number(court.dayRate) || 300}"></label><label>Maximum players<input name="maxPlayers" type="number" min="1" max="100" value="${Number(court.maxPlayers) || 10}"></label><label>Description<textarea name="description" maxlength="1000" rows="2">${escapeHtml(court.description || '')}</textarea></label><label>Court photo<input name="image" type="file" accept="image/png,image/jpeg,image/webp"></label></div><div class="payment-help formMessage" role="status"></div><button class="pill">${court.id ? 'Save court' : 'Add court'}</button></form>`;
   }
   function adminCourtItem(court) {
     const photo = safeImage(court.image);
@@ -201,7 +206,7 @@
       event.preventDefault(); const message = $('.formMessage', form), values = new FormData(form);
       try {
         const image = await imageFileData(values.get('image'));
-        const court = { name: values.get('name'), location: values.get('location'), dayRate: Number(values.get('dayRate')), nightRate: Number(values.get('nightRate')), displayPrice: Number(values.get('displayPrice')), maxPlayers: Number(values.get('maxPlayers')), description: values.get('description'), ...(image ? { image } : {}) };
+        const court = { name: values.get('name'), location: values.get('location'), openingMinute: timeInputMinute(values.get('openingTime')), closingMinute: timeInputMinute(values.get('closingTime'), true), priceChangeMinute: timeInputMinute(values.get('priceChangeTime')), dayRate: Number(values.get('dayRate')), nightRate: Number(values.get('nightRate')), displayPrice: Number(values.get('displayPrice')), maxPlayers: Number(values.get('maxPlayers')), description: values.get('description'), ...(image ? { image } : {}) };
         const id = form.dataset.courtId;
         if (id) await patch(`/api/admin/courts/${encodeURIComponent(id)}`, court); else await post('/api/admin/courts', court);
         const refreshed = await api('/api/admin/dashboard'); settings = refreshed.settings; refreshPublic(); await renderAdmin();
