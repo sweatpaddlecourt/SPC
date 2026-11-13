@@ -47,7 +47,7 @@
         if (!event.data || event.data.requestId !== packet.requestId) return;
         cleanup(); resolve(event.data.result || {});
       };
-      const timeout = window.setTimeout(() => { cleanup(); reject(new Error('Google Sheets did not respond. Check the Apps Script deployment and try again.')); }, 30000);
+      const timeout = window.setTimeout(() => { cleanup(); reject(new Error('The booking service took too long to respond. Check your connection and try again.')); }, Math.max(1000, Number(options.timeoutMs) || 30000));
       window.addEventListener('message', onMessage); document.body.append(frame, form); form.submit();
     });
     if (response.status < 200 || response.status >= 300) { const error = new Error(response.error || `Request failed (${response.status}).`); error.status = response.status; throw error; }
@@ -93,7 +93,7 @@
     }
     grid.innerHTML = settings.courts.map(court => {
       const photo = safeImage(court.image);
-      return `<article class="court-card"><div class="court-cover"><div class="cover-roof"></div><div class="cover-floor"></div><div class="cover-net"></div>${photo ? `<img src="${photo}" alt="${escapeHtml(court.name)} at Sweat Paddle Court">` : ''}<span class="court-badge">Daily · ${formatTime(courtHours(court).opening)}–${formatTime(courtHours(court).closing)}</span><span class="available-badge">Available</span></div><div class="court-body"><div class="court-title-row"><div><h2>${escapeHtml(court.name)}</h2><div class="court-loc">⌖ ${escapeHtml(court.location || 'Sweat Paddle Court')}</div></div><div class="court-price">${money(court.displayPrice || court.dayRate)}<small>/ hour</small></div></div><p class="court-desc">${escapeHtml(court.description || '')}</p><a class="details-link" href="#" data-details="${escapeHtml(court.id)}">See full description →</a><div class="time-pricing"><div class="pricing-head">₱ &nbsp;Time-Based Pricing</div>${pricingRows(court)}</div><div class="court-foot"><span class="pax">♙ &nbsp;Up to ${escapeHtml(court.maxPlayers || 10)} pax</span><button class="book-now" data-book="${escapeHtml(court.id)}">Book Now</button></div></div></article>`;
+      return `<article class="court-card"><div class="court-cover"><div class="cover-roof"></div><div class="cover-floor"></div><div class="cover-net"></div>${photo ? `<img src="${photo}" alt="${escapeHtml(court.name)} at Sweat Paddle Court" loading="lazy" decoding="async">` : ''}<span class="court-badge">Daily · ${formatTime(courtHours(court).opening)}–${formatTime(courtHours(court).closing)}</span><span class="available-badge">Available</span></div><div class="court-body"><div class="court-title-row"><div><h2>${escapeHtml(court.name)}</h2><div class="court-loc">⌖ ${escapeHtml(court.location || 'Sweat Paddle Court')}</div></div><div class="court-price">${money(court.displayPrice || court.dayRate)}<small>/ hour</small></div></div><p class="court-desc">${escapeHtml(court.description || '')}</p><a class="details-link" href="#" data-details="${escapeHtml(court.id)}">See full description →</a><div class="time-pricing"><div class="pricing-head">₱ &nbsp;Time-Based Pricing</div>${pricingRows(court)}</div><div class="court-foot"><span class="pax">♙ &nbsp;Up to ${escapeHtml(court.maxPlayers || 10)} pax</span><button class="book-now" data-book="${escapeHtml(court.id)}">Book Now</button></div></div></article>`;
     }).join('');
     grid.querySelectorAll('[data-book]').forEach(button => button.addEventListener('click', () => openBooking(button.dataset.book)));
     grid.querySelectorAll('[data-details]').forEach(link => link.addEventListener('click', event => {
@@ -102,6 +102,21 @@
     }));
   }
   function refreshPublic() { renderCourts(); renderHero(); }
+  const PUBLIC_CACHE_KEY = 'sp_public_settings_cache_v1';
+  function readPublicCache() {
+    try { const cached = JSON.parse(localStorage.getItem(PUBLIC_CACHE_KEY) || 'null'); if (cached?.settings && Array.isArray(cached.settings.courts)) return cached; } catch {}
+    return null;
+  }
+  function savePublicCache(data) {
+    try {
+      const cachedSettings = { ...data.settings, heroImage: String(data.settings.heroImage || '').startsWith('data:') ? '' : data.settings.heroImage, courts: (data.settings.courts || []).map(court => ({ ...court, image: String(court.image || '').startsWith('data:') ? '' : court.image })) };
+      localStorage.setItem(PUBLIC_CACHE_KEY, JSON.stringify({ settings: cachedSettings, adminSetupRequired: data.adminSetupRequired }));
+    } catch {}
+  }
+  function showPublicUnavailable(error) {
+    const message = error?.message || 'The live booking service could not be reached.';
+    $('#courtGrid').innerHTML = `<div class="empty-state court-empty"><span class="empty-courts-icon">↻</span><h2>Booking is taking longer than usual</h2><p>${escapeHtml(message)} Please check your connection and try again.</p><button class="pill" id="retryPublicData" type="button">Try again</button></div>`;
+  }
 
   function showPayment(booking, siteSettings = settings) {
     const qr = safeImage(siteSettings.instapayQr), link = safePaymentLink(siteSettings.instapayUrl);
@@ -204,7 +219,7 @@
   }
   function adminCourtItem(court) {
     const photo = safeImage(court.image);
-    return '<div class="admin-court-item" data-court-id="' + escapeHtml(court.id) + '"><article class="admin-court-card"><div class="admin-court-image">' + (photo ? '<img src="' + photo + '" alt="' + escapeHtml(court.name) + ' at Sweat Paddle Court">' : '<div class="admin-court-placeholder" aria-hidden="true"><span>YOUR NEXT RALLY</span><small>SWEAT PADDLE COURT</small></div>') + '</div><div class="admin-court-overlay"><div class="admin-court-title"><strong>' + escapeHtml(court.name) + '</strong><span>' + escapeHtml(court.location || 'Sweat Paddle Court') + '</span></div><div class="admin-court-actions"><button type="button" data-edit-court aria-label="Edit ' + escapeHtml(court.name) + '">Edit</button><button type="button" class="delete" data-delete-court="' + escapeHtml(court.id) + '" data-court-name="' + escapeHtml(court.name) + '" aria-label="Delete ' + escapeHtml(court.name) + '">Delete</button></div></div></article><div class="admin-court-editor" hidden>' + courtForm(court) + '</div></div>';
+    return '<div class="admin-court-item" data-court-id="' + escapeHtml(court.id) + '"><article class="admin-court-card"><div class="admin-court-image">' + (photo ? '<img src="' + photo + '" alt="' + escapeHtml(court.name) + ' at Sweat Paddle Court" loading="lazy" decoding="async">' : '<div class="admin-court-placeholder" aria-hidden="true"><span>YOUR NEXT RALLY</span><small>SWEAT PADDLE COURT</small></div>') + '</div><div class="admin-court-overlay"><div class="admin-court-title"><strong>' + escapeHtml(court.name) + '</strong><span>' + escapeHtml(court.location || 'Sweat Paddle Court') + '</span></div><div class="admin-court-actions"><button type="button" data-edit-court aria-label="Edit ' + escapeHtml(court.name) + '">Edit</button><button type="button" class="delete" data-delete-court="' + escapeHtml(court.id) + '" data-court-name="' + escapeHtml(court.name) + '" aria-label="Delete ' + escapeHtml(court.name) + '">Delete</button></div></div></article><div class="admin-court-editor" hidden>' + courtForm(court) + '</div></div>';
   }
   async function renderAdmin(options = {}) {
     const activeTab = options.activeTab || modalContent.querySelector('[data-booking-tab].active')?.dataset.bookingTab || 'pending';
@@ -361,11 +376,28 @@
   $('#showVenueMap').addEventListener('click', () => {
     const frame = document.createElement('iframe'); frame.className = 'venue-map-frame'; frame.title = 'Map to Sweat Paddle Court in Talisay City'; frame.loading = 'lazy'; frame.referrerPolicy = 'no-referrer-when-downgrade'; frame.src = 'https://www.google.com/maps?q=10.263861,123.816417&output=embed'; $('#mapStage').prepend(frame); $('#showVenueMap').hidden = true; $('#mapDirections').hidden = false;
   });
-  async function start() {
-    try { const data = await api('/api/public'); settings = data.settings; adminSetupRequired = data.adminSetupRequired; refreshPublic(); }
-    catch (error) { $('#courtGrid').innerHTML = `<div class="empty-state court-empty"><h2>Booking service unavailable</h2><p>${escapeHtml(error.message)} Start the Node server and open its website address.</p></div>`; }
+  async function loadPublicSettings() {
+    const retry = $('#retryPublicData'); if (retry) { retry.disabled = true; retry.textContent = 'Connecting…'; }
+    try {
+      const data = await api('/api/public', { timeoutMs: 12000 });
+      settings = data.settings; adminSetupRequired = data.adminSetupRequired; savePublicCache(data); refreshPublic();
+    } catch (error) {
+      if (!settings.courts.length) showPublicUnavailable(error);
+      else {
+        let notice = $('#publicRefreshNotice');
+        if (!notice) { notice = document.createElement('p'); notice.id = 'publicRefreshNotice'; notice.className = 'payment-help'; $('#courtGrid').before(notice); }
+        notice.textContent = 'Showing saved court details. Live booking could not connect; availability will be checked when you book.';
+      }
+    }
+  }
+  $('#courtGrid').addEventListener('click', event => { if (event.target.closest('#retryPublicData')) loadPublicSettings(); });
+  function start() {
+    const cached = readPublicCache();
+    if (cached) { settings = cached.settings; adminSetupRequired = cached.adminSetupRequired; refreshPublic(); }
+    else $('#courtGrid').innerHTML = '<div class="empty-state court-empty"><span class="empty-courts-icon">…</span><h2>Loading courts</h2><p>Getting the latest court hours and prices.</p></div>';
     const loader = $('#siteLoader');
-    if (loader) { loader.classList.add('is-done'); window.setTimeout(() => loader.remove(), 650); }
+    if (loader) window.setTimeout(() => { loader.classList.add('is-done'); window.setTimeout(() => loader.remove(), 650); }, 300);
+    loadPublicSettings();
   }
   start();
 })();
