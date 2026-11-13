@@ -248,7 +248,8 @@
         if (id) {
           const result = await patch(`/api/admin/courts/${encodeURIComponent(id)}`, court);
           const existing = settings.courts.find(item => item.id === id) || {};
-          const saved = (result.settings && result.settings.courts.find(item => item.id === id)) || { ...existing, ...court, ...(image ? { image } : {}) };
+          const savedFromApi = (result.settings && result.settings.courts.find(item => item.id === id)) || {};
+          const saved = { ...existing, ...court, ...savedFromApi, ...(image ? { image } : {}) };
           if (!saved.image && existing.image) saved.image = existing.image;
           settings.courts = settings.courts.map(item => item.id === id ? saved : item);
           refreshPublic();
