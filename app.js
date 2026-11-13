@@ -121,19 +121,20 @@
   function openBooking(courtId) {
     const court = settings.courts.find(item => item.id === courtId); if (!court) return;
     const bookingDay = bookingClock().dateISO;
-    openModal(`<h2 id="modalTitle">Book ${escapeHtml(court.name)}</h2><p>Choose one or more open hours, then enter your name.</p><div class="summary"><b>${escapeHtml(court.name)}</b><br>${escapeHtml(court.location || 'Sweat Paddle Court')}</div><div class="modal-fields"><label>Date<input id="bookingDate" type="date" min="${bookingDay}" value="${bookingDay}" required></label><div><label>Available times · select multiple</label><div class="slots" id="bookingSlots"></div></div><label>Your name<input id="bookingName" maxlength="80" required autocomplete="name" placeholder="Name"></label></div><p id="bookingPrice" class="payment-help">Select times to see your total.</p><p id="bookingError" class="payment-help" role="alert"></p><button class="pill" id="submitBooking">Continue to payment →</button>`);
-    const date = $('#bookingDate'), slotBox = $('#bookingSlots'), price = $('#bookingPrice'), error = $('#bookingError'), selected = new Map();
+    openModal(`<h2 id="modalTitle">Book ${escapeHtml(court.name)}</h2><p>Choose one or more open hours, then enter your name.</p><div class="summary"><b>${escapeHtml(court.name)}</b><br>${escapeHtml(court.location || 'Sweat Paddle Court')}</div><div class="modal-fields"><label>Date<input id="bookingDate" type="date" min="${bookingDay}" value="${bookingDay}" required></label><div><label>Available times · select multiple</label><div class="slots" id="bookingSlots"></div><div id="bookingPendingWarning" class="pending-booking-warning" role="alert" hidden></div></div><label>Your name<input id="bookingName" maxlength="80" required autocomplete="name" placeholder="Name"></label></div><p id="bookingPrice" class="payment-help">Select times to see your total.</p><p id="bookingError" class="payment-help" role="alert"></p><button class="pill" id="submitBooking">Continue to payment →</button>`);
+    const date = $('#bookingDate'), slotBox = $('#bookingSlots'), price = $('#bookingPrice'), error = $('#bookingError'), pendingWarning = $('#bookingPendingWarning'), selected = new Map(); let pending = new Set();
+    function updatePendingWarning() { const hasPendingSelection = [...selected.keys()].some(minute => pending.has(minute)); pendingWarning.hidden = !hasPendingSelection; if (hasPendingSelection) pendingWarning.innerHTML = '<svg class="facebook-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#1877f2"/><path fill="#fff" d="M13.4 20v-7.1h2.4l.4-2.8h-2.8V8.3c0-.8.2-1.4 1.4-1.4h1.5V4.4c-.3 0-1.2-.1-2.2-.1-2.2 0-3.7 1.3-3.7 3.8v2.1H8v2.8h2.4V20z"/></svg><span>This hour has a payment waiting for club verification. Your request may be voided if the earlier booking is confirmed. Check with the club before paying: <a href="https://www.facebook.com/profile.php?id=61595968972214" target="_blank" rel="noopener noreferrer">Message us on Facebook ↗</a></span>'; }
     async function loadSlots(reset = false) {
-      if (reset) selected.clear(); slotBox.textContent = 'Loading availability…';
+      if (reset) { selected.clear(); $('#bookingPendingWarning').hidden = true; } slotBox.textContent = 'Loading availability…';
       try {
-        const data = await api(`/api/availability?date=${encodeURIComponent(date.value)}&courtId=${encodeURIComponent(courtId)}`), busy = new Set(data.booked);
+        const data = await api(`/api/availability?date=${encodeURIComponent(date.value)}&courtId=${encodeURIComponent(courtId)}`), busy = new Set(data.booked); pending = new Set(data.pending || []);
         slotBox.replaceChildren(); let openCount = 0;
         const now = bookingClock();
         for (const slot of timeChoicesFor(court)) {
-          const button = document.createElement('button'); button.type = 'button'; button.className = 'slot'; const isPast = date.value === now.dateISO && slot.start < now.minuteOfDay, isBooked = busy.has(slot.start); if (isBooked) { button.classList.add('booked'); button.style.backgroundColor = '#f8652a'; button.style.borderColor = '#f8652a'; button.style.color = '#fff'; button.style.opacity = '1'; } button.textContent = `${slot.label}${isBooked ? ' · Booked' : isPast ? ' · Past' : ''}`; button.disabled = isBooked || isPast;
+          const button = document.createElement('button'); button.type = 'button'; button.className = 'slot'; const isPast = date.value === now.dateISO && slot.start < now.minuteOfDay, isBooked = busy.has(slot.start), isPending = pending.has(slot.start) && !isBooked; if (isBooked) { button.classList.add('booked'); button.style.backgroundColor = '#f8652a'; button.style.borderColor = '#f8652a'; button.style.color = '#fff'; button.style.opacity = '1'; } if (isPending) button.classList.add('pending-slot'); button.innerHTML = `<span class="slot-label">${slot.label}${isBooked ? ' · Booked' : isPast ? ' · Past' : ''}</span>${isPending ? '<span class="pending-slot-marker" role="img" aria-label="Pending booking awaiting verification"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M36 12A18 18 0 1 0 41 27" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M31 5h12v12M31 5l12 12M18 17h12M18 31h12M19 17c0 7 10 7 10 14" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><small>Pending review</small></span>' : ''}`; button.setAttribute('aria-label', `${slot.label}${isPending ? ' · Pending booking awaiting verification' : isBooked ? ' · Booked' : isPast ? ' · Past' : ''}`); button.disabled = isBooked || isPast;
           if (button.disabled) selected.delete(slot.start);
           else { openCount++; if (selected.has(slot.start)) button.classList.add('selected'); }
-          button.addEventListener('click', () => { if (selected.has(slot.start)) { selected.delete(slot.start); button.classList.remove('selected'); } else { selected.set(slot.start, slot.label); button.classList.add('selected'); } updatePrice(); }); slotBox.append(button);
+          button.addEventListener('click', () => { if (selected.has(slot.start)) { selected.delete(slot.start); button.classList.remove('selected'); } else { selected.set(slot.start, slot.label); button.classList.add('selected'); } updatePrice(); updatePendingWarning(); }); slotBox.append(button);
         }
         if (!openCount) slotBox.textContent = 'No times left for this date.';
         updatePrice();
@@ -240,12 +241,13 @@
       courtEditorPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
     modalContent.querySelectorAll('.courtForm').forEach(form => form.addEventListener('submit', async event => {
-      event.preventDefault(); const message = $('.formMessage', form), values = new FormData(form);
+      event.preventDefault(); const message = $('.formMessage', form), values = new FormData(form), id = form.dataset.courtId, saveButton = form.querySelector('button[type="submit"]') || form.querySelector('.pill');
+      const court = { name: values.get('name'), location: values.get('location'), openingMinute: timeInputMinute(values.get('openingTime')), closingMinute: timeInputMinute(values.get('closingTime'), true), dayRateStartMinute: timeInputMinute(values.get('dayRateStartTime')), nightRateStartMinute: timeInputMinute(values.get('nightRateStartTime')), dayRate: Number(values.get('dayRate')), nightRate: Number(values.get('nightRate')), displayPrice: Number(values.get('dayRate')), description: values.get('description') };
+      const hours = courtHours(court); if (court.dayRateStartMinute < hours.opening || court.nightRateStartMinute <= court.dayRateStartMinute || court.nightRateStartMinute >= hours.closing) return showNotice(message, 'Set the day rate at or after opening, and the night rate after the day rate but before closing.');
+      if (id) { courtEditorPanel.hidden = true; saveButton.disabled = true; saveButton.textContent = 'Saving…'; }
       try {
         const image = await imageFileData(values.get('image'));
-        const court = { name: values.get('name'), location: values.get('location'), openingMinute: timeInputMinute(values.get('openingTime')), closingMinute: timeInputMinute(values.get('closingTime'), true), dayRateStartMinute: timeInputMinute(values.get('dayRateStartTime')), nightRateStartMinute: timeInputMinute(values.get('nightRateStartTime')), dayRate: Number(values.get('dayRate')), nightRate: Number(values.get('nightRate')), displayPrice: Number(values.get('dayRate')), description: values.get('description'), ...(image ? { image } : {}) };
-        const hours = courtHours(court); if (court.dayRateStartMinute < hours.opening || court.nightRateStartMinute <= court.dayRateStartMinute || court.nightRateStartMinute >= hours.closing) return showNotice(message, 'Set the day rate at or after opening, and the night rate after the day rate but before closing.');
-        const id = form.dataset.courtId;
+        if (image) court.image = image;
         if (id) {
           const result = await patch(`/api/admin/courts/${encodeURIComponent(id)}`, court);
           const existing = settings.courts.find(item => item.id === id) || {};
@@ -265,7 +267,7 @@
         }
         const result = await post('/api/admin/courts', court);
         const refreshed = await api('/api/admin/dashboard'); settings = refreshed.settings; refreshPublic(); await renderAdmin();
-      } catch (error) { showNotice(message, error.message); }
+      } catch (error) { if (id) { courtEditorPanel.hidden = false; saveButton.disabled = false; saveButton.textContent = 'Save court'; } showNotice(message, error.message); }
     }));
     modalContent.querySelectorAll('[data-delete-court]').forEach(button => button.addEventListener('click', async () => {
       const id = button.dataset.deleteCourt;
