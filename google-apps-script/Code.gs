@@ -45,10 +45,12 @@ function route_(packet) {
   if (method === 'GET' && path === '/api/availability') {
     const date = query.date || '', courtId = query.courtId || '';
     if (!validDate_(date) || !courtId) return fail_(400, 'Choose a valid date and court.');
-    const booked = readBookings_().filter(function (b) {
-      return bookingBlocksTime_(b) && b.dateISO === date && (courtId === 'exclusive' || b.courtId === courtId || b.courtId === 'exclusive');
-    }).reduce(function (all, b) { return all.concat(b.minutes); }, []);
-    return ok_({ booked: Array.from(new Set(booked)) });
+    const relevant = readBookings_().filter(function (b) {
+      return b.dateISO === date && (courtId === 'exclusive' || b.courtId === courtId || b.courtId === 'exclusive');
+    });
+    const booked = relevant.filter(bookingBlocksTime_).reduce(function (all, b) { return all.concat(b.minutes); }, []);
+    const pending = relevant.filter(bookingPendingReview_).reduce(function (all, b) { return all.concat(b.minutes); }, []);
+    return ok_({ booked: Array.from(new Set(booked)), pending: Array.from(new Set(pending)) });
   }
   if (method === 'POST' && path === '/api/bookings') return createBooking_(body);
   if (method === 'POST' && path === '/api/bookings/report') {
@@ -132,6 +134,7 @@ function route_(packet) {
 }
 
 function bookingBlocksTime_(booking) { return ['paid', 'confirmed', 'booked'].indexOf(String(booking.status || '').trim().toLowerCase()) >= 0; }
+function bookingPendingReview_(booking) { return String(booking.status || '').trim().toLowerCase() === 'payment reported' && !bookingBlocksTime_(booking); }
 
 function normalizeDateISO_(value, timeZone) {
   if (value instanceof Date && !isNaN(value.getTime())) {
