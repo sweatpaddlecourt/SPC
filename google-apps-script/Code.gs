@@ -155,7 +155,7 @@ function createBooking_(body) {
   if (!lock.tryLock(20000)) return fail_(503, 'Bookings are busy. Please try again.');
   try {
     const name = String(body.name || '').trim().slice(0, 80), courtId = String(body.courtId || ''), date = String(body.dateISO || '');
-    const times = Array.isArray(body.times) ? Array.from(new Set(body.times)).slice(0, 17) : [];
+    const times = Array.isArray(body.times) ? Array.from(new Set(body.times)).slice(0, 24) : [];
     if (name.length < 2 || !validDate_(date) || !times.length) return fail_(400, 'Enter your name, choose a valid date, and select at least one hour.');
     const settings = readSettings_(), court = settings.courts.find(function (c) { return c.id === courtId; });
     if (!court) return fail_(400, 'That court is no longer available. Refresh and try again.');
