@@ -109,7 +109,7 @@
     openModal(`<h2 id="modalTitle">Complete your payment</h2><p>Scan the QR code or use the payment link, then send your proof below.</p><div class="payment-card"><div class="payment-reference">${escapeHtml(booking.reference)}</div><div class="summary"><b>${escapeHtml(booking.court)}</b><br>${escapeHtml(booking.date)} · ${escapeHtml(booking.time)} · ${booking.duration} hour${booking.duration === 1 ? '' : 's'}<br>Booked by ${escapeHtml(booking.name)}<br><b>Amount: ${money(booking.amount)}</b></div>${qr ? `<img class="payment-qr" src="${qr}" alt="InstaPay QR code"><a class="payment-qr-download" href="${qr}" download="sweat-paddle-court-payment-qr">Download QR image</a>` : ''}${paymentLink}<p class="payment-help">After paying, upload a screenshot of your payment or enter the payment reference number. The club will verify it before confirming your booking.</p></div><div class="payment-proof-form"><label for="paymentReferenceInput">Payment reference number</label><input id="paymentReferenceInput" type="text" maxlength="120" autocomplete="off" placeholder="Enter the reference from your payment"><label for="paymentReceiptInput">Or upload a payment receipt</label><input id="paymentReceiptInput" type="file" accept="image/png,image/jpeg,image/webp"><p class="payment-help">Provide at least one: a receipt image or a payment reference number.</p><div id="paymentProofMessage" class="payment-help" role="status"></div><button class="pill" id="submitPaymentProof" ${configured ? '' : 'disabled'}>${configured ? 'Submit payment proof' : 'Payment details not set up yet'}</button></div>`);
     $('#submitPaymentProof')?.addEventListener('click', async () => {
       const message = $('#paymentProofMessage'), paymentReference = $('#paymentReferenceInput').value.trim(), file = $('#paymentReceiptInput').files[0];
-      if (!paymentReference && !file) return showNotice(message, 'Upload a receipt image or enter a payment reference number.');
+      if (!paymentReference && (!file || !file.name)) return showNotice(message, 'Upload a receipt image or enter a payment reference number.');
       try {
         const receiptImage = await imageFileData(file);
         await post('/api/bookings/report', { reference: booking.reference, name: booking.name, paymentReference, receiptImage });
@@ -181,7 +181,7 @@
   }
   function imageFileData(file) {
     return new Promise((resolve, reject) => {
-      if (!file) return resolve('');
+      if (!file || !file.name) return resolve('');
       if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type) || file.size > 3 * 1024 * 1024) return reject(new Error('Choose a PNG, JPEG, GIF, or WebP image under 3 MB.'));
       const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(new Error('Could not read that image.')); reader.readAsDataURL(file);
     });
