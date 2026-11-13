@@ -245,7 +245,23 @@
         const image = await imageFileData(values.get('image'));
         const court = { name: values.get('name'), location: values.get('location'), openingMinute: timeInputMinute(values.get('openingTime')), closingMinute: timeInputMinute(values.get('closingTime'), true), priceChangeMinute: timeInputMinute(values.get('priceChangeTime')), dayRate: Number(values.get('dayRate')), nightRate: Number(values.get('nightRate')), displayPrice: Number(values.get('dayRate')), description: values.get('description'), ...(image ? { image } : {}) };
         const id = form.dataset.courtId;
-        if (id) await patch(`/api/admin/courts/${encodeURIComponent(id)}`, court); else await post('/api/admin/courts', court);
+        if (id) {
+          const result = await patch(`/api/admin/courts/${encodeURIComponent(id)}`, court);
+          const existing = settings.courts.find(item => item.id === id) || {};
+          const saved = (result.settings && result.settings.courts.find(item => item.id === id)) || { ...existing, ...court, ...(image ? { image } : {}) };
+          if (!saved.image && existing.image) saved.image = existing.image;
+          settings.courts = settings.courts.map(item => item.id === id ? saved : item);
+          refreshPublic();
+          const item = Array.from(modalContent.querySelectorAll('.admin-court-item')).find(node => node.dataset.courtId === id);
+          if (item) {
+            $('.admin-court-title strong', item).textContent = saved.name;
+            $('.admin-court-title span', item).textContent = saved.location || 'Sweat Paddle Court';
+            if (image) $('.admin-court-image', item).innerHTML = '<img src="' + safeImage(image) + '" alt="' + escapeHtml(saved.name) + ' at Sweat Paddle Court">';
+          }
+          courtEditorPanel.hidden = true;
+          return;
+        }
+        const result = await post('/api/admin/courts', court);
         const refreshed = await api('/api/admin/dashboard'); settings = refreshed.settings; refreshPublic(); await renderAdmin();
       } catch (error) { showNotice(message, error.message); }
     }));
