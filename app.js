@@ -672,14 +672,15 @@
       const booking = adminDashboardData?.bookings.find(item => item.reference === reference);
       if (!booking) { showNotice($('#bookingAdminNotice'), 'Booking data is unavailable. Reload the admin panel and try again.'); return; }
       const previousStatus = booking.status;
+      const returnTab = status === 'Paid' ? (modalContent.querySelector('[data-booking-tab].active')?.dataset.bookingTab || 'pending') : (tab || 'pending');
       const action = showActionPopup(status === 'Paid' ? 'Marking payment as paid…' : 'Cancelling booking…', 'Please wait for the server to confirm this change.');
       booking.status = status;
-      await renderAdmin({ useCache: true, activeTab: tab });
+      await renderAdmin({ useCache: true, activeTab: returnTab });
       try {
         const result = await patch('/api/admin/bookings/' + encodeURIComponent(reference), { status });
         try {
           adminDashboardData = await api('/api/admin/dashboard');
-          await renderAdmin({ useCache: true, activeTab: tab });
+          await renderAdmin({ useCache: true, activeTab: returnTab });
         } catch (refreshError) {
           showNotice($('#bookingAdminNotice'), 'Saved successfully. The latest data could not refresh: ' + refreshError.message);
           await action.complete(result.cancelled || status === 'Cancelled' ? 'Booking cancelled' : 'Payment marked paid', 'The server saved the change, but the booking list could not refresh.');
@@ -690,7 +691,7 @@
         await action.complete(wasCancelled ? 'Booking cancelled' : 'Payment marked paid', result.cancelled ? (result.message || 'The booking was cancelled.') : status === 'Cancelled' ? 'The booking was cancelled.' : 'The payment was marked as paid.');
       } catch (error) {
         booking.status = previousStatus;
-        await renderAdmin({ useCache: true, activeTab: /^cancel/i.test(previousStatus || '') ? 'cancelled' : previousStatus === 'Paid' ? 'paid' : 'pending' });
+        await renderAdmin({ useCache: true, activeTab: returnTab });
         action.dismiss();
         showNotice($('#bookingAdminNotice'), error.message);
       }
