@@ -61,10 +61,22 @@ function route_(packet) {
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(20000)) return fail_(503, 'Bookings are busy. Please try again.');
     try {
-      let booking = findBooking_(body.reference, body.name);
+      let booking = findBooking_(body.reference, body.name), requestBody = body;
+      if (!booking) {
+        const draftReference = String(body.reference || '').trim();
+        let cachedDraft = '';
+        try { cachedDraft = CacheService.getScriptCache().get('booking-draft:' + draftReference) || ''; } catch (cacheError) {}
+        if (cachedDraft) {
+          try {
+            const draft = JSON.parse(cachedDraft);
+            if (draft.reference === draftReference && String(draft.name || '').trim().toLowerCase() === String(body.name || '').trim().toLowerCase()) requestBody = Object.assign({}, draft, body);
+          } catch (cacheError) {}
+        }
+        if (!requestBody.courtId || !requestBody.dateISO || !Array.isArray(requestBody.times)) return fail_(409, 'This booking session expired. Please refresh the page, choose the time again, then submit your payment proof.');
+      }
       if (booking && booking.status === 'Paid') return fail_(409, 'This booking has already been verified as paid.');
       if (!booking) {
-        const result = bookingFromRequest_(body, body.reference);
+        const result = bookingFromRequest_(requestBody, body.reference);
         if (!result.booking) return fail_(result.status, result.error);
         if (readBookings_().some(function (item) { return item.reference === result.booking.reference; })) return fail_(409, 'This booking reference is already in use. Please start again.');
         booking = result.booking;
@@ -76,6 +88,7 @@ function route_(packet) {
         saveBookingProof_(booking.reference, paymentReference, receiptImage);
         if (booking.status === 'Awaiting payment') updateBooking_(booking.reference, function (row) { row.status = 'Payment reported'; });
       }
+      try { CacheService.getScriptCache().remove('booking-draft:' + String(body.reference || '').trim()); } catch (cacheError) {}
       return ok_({ ok: true });
     } finally { lock.releaseLock(); }
   }
@@ -194,6 +207,7 @@ function createBooking_(body) {
   try {
     const result = bookingFromRequest_(body, '');
     if (!result.booking) return fail_(result.status, result.error);
+    try { CacheService.getScriptCache().put('booking-draft:' + result.booking.reference, JSON.stringify(result.booking), SESSION_TTL_SECONDS); } catch (cacheError) {}
     return ok_({ booking: result.booking, settings: result.settings }, 201);
   } finally { lock.releaseLock(); }
 }
