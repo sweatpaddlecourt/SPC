@@ -12,10 +12,11 @@
   const localDate = bookingClock().dateISO;
   dateInput.min = localDate;
   dateInput.value = localDate;
-  const DEFAULT_SITE_SETTINGS = { courts: [], instapayUrl: '', instapayQr: '', heroImage: '', contactPhones: ['0927 535 8196', '0908 907 8224', '0933 536 8205'], contactEmail: 'maryjeandagondon@gmail.com', contactName: 'Sweat Paddle Court', contactAddress: 'San Antonio, Brgy. Linao, Talisay City, Cebu', businessHours: 'Open daily' };
+  const DEFAULT_SITE_SETTINGS = { courts: [], instapayUrl: '', instapayQr: '', heroImage: '', heroImages: [], contactPhones: ['0927 535 8196', '0908 907 8224', '0933 536 8205'], contactEmail: 'maryjeandagondon@gmail.com', contactName: 'Sweat Paddle Court', contactAddress: 'San Antonio, Brgy. Linao, Talisay City, Cebu', businessHours: 'Open daily' };
   function normalizeSettings(value) {
     const source = value && typeof value === 'object' ? value : {};
-    return { ...DEFAULT_SITE_SETTINGS, ...source, courts: Array.isArray(source.courts) ? source.courts : [], contactPhones: Array.isArray(source.contactPhones) ? source.contactPhones.filter(phone => typeof phone === 'string' && phone.trim()).slice(0, 10) : DEFAULT_SITE_SETTINGS.contactPhones.slice() };
+    const heroImages = Array.isArray(source.heroImages) ? source.heroImages.filter(image => typeof image === 'string' && image.trim()).slice(0, 10) : (typeof source.heroImage === 'string' && source.heroImage ? [source.heroImage] : []);
+    return { ...DEFAULT_SITE_SETTINGS, ...source, heroImages, courts: Array.isArray(source.courts) ? source.courts : [], contactPhones: Array.isArray(source.contactPhones) ? source.contactPhones.filter(phone => typeof phone === 'string' && phone.trim()).slice(0, 10) : DEFAULT_SITE_SETTINGS.contactPhones.slice() };
   }
   let settings = normalizeSettings();
   let adminSetupRequired = true;
@@ -83,12 +84,34 @@
   function timeInputMinute(value, closing) { if (closing && value === '00:00') return 1440; const parts = value.split(':').map(Number); return parts[0] * 60 + parts[1]; }
   function pricingRows(court) { const h = courtHours(court), rows = []; if (h.dayRateStart > h.opening) rows.push(formatTime(h.opening) + ' - ' + formatTime(h.dayRateStart) + ': <strong>' + money(court.nightRate) + '/hr</strong>'); if (Math.min(h.nightRateStart, h.closing) > h.dayRateStart) rows.push(formatTime(h.dayRateStart) + ' - ' + formatTime(Math.min(h.nightRateStart, h.closing)) + ': <strong>' + money(court.dayRate) + '/hr</strong>'); if (h.closing > h.nightRateStart) rows.push(formatTime(h.nightRateStart) + ' - ' + formatTime(h.closing) + ': <strong>' + money(court.nightRate) + '/hr</strong>'); return rows.map(row => '<div>' + row + '</div>').join(''); }
 
+  let heroSlideTimer = null;
   function renderHero() {
-    const images = [settings.heroImage, ...settings.courts.map(court => court.image)].map(safeImage).filter(Boolean);
-    const image = $('#heroImage'), placeholder = $('#heroPlaceholder'), controls = $('#heroCarouselControls');
-    if (images.length) { image.src = images[0]; image.classList.add('visible'); placeholder.classList.add('hidden'); }
-    else { image.removeAttribute('src'); image.classList.remove('visible'); placeholder.classList.remove('hidden'); }
-    controls.hidden = true;
+    const configured = Array.isArray(settings.heroImages) ? settings.heroImages : [];
+    const legacy = !configured.length && settings.heroImage ? [settings.heroImage] : [];
+    const images = [...new Set([...configured, ...legacy, ...settings.courts.map(court => court.image)].map(safeImage).filter(Boolean))];
+    const image = $('#heroImage'), nextImage = $('#heroImageNext'), placeholder = $('#heroPlaceholder'), controls = $('#heroCarouselControls'), dots = $('#heroCarouselDots');
+    if (heroSlideTimer) { window.clearInterval(heroSlideTimer); heroSlideTimer = null; }
+    if (!images.length) {
+      image.removeAttribute('src'); image.classList.remove('visible'); nextImage.removeAttribute('src'); nextImage.classList.remove('visible');
+      placeholder.classList.remove('hidden'); controls.hidden = true; dots.replaceChildren(); return;
+    }
+    placeholder.classList.add('hidden'); image.classList.add('visible'); nextImage.removeAttribute('src'); nextImage.classList.remove('visible');
+    let active = 0;
+    function showSlide(index) {
+      active = (index + images.length) % images.length;
+      image.src = images[active]; image.alt = 'Sweat Paddle Court photo ' + (active + 1);
+      dots.querySelectorAll('[data-slide]').forEach(button => {
+        const selected = Number(button.dataset.slide) === active;
+        button.classList.toggle('active', selected); button.setAttribute('aria-pressed', String(selected));
+      });
+    }
+    dots.innerHTML = images.map((_, index) => '<button class="hero-carousel-dot' + (index === 0 ? ' active' : '') + '" type="button" data-slide="' + index + '" aria-label="Show photo ' + (index + 1) + '" aria-pressed="' + String(index === 0) + '"></button>').join('');
+    dots.querySelectorAll('[data-slide]').forEach(button => button.addEventListener('click', () => showSlide(Number(button.dataset.slide))));
+    $('#heroPrev').onclick = () => showSlide(active - 1);
+    $('#heroNext').onclick = () => showSlide(active + 1);
+    controls.hidden = images.length < 2;
+    showSlide(0);
+    if (images.length > 1 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) heroSlideTimer = window.setInterval(() => showSlide(active + 1), 5500);
   }
   function renderCourts() {
     const grid = $('#courtGrid');
@@ -127,7 +150,7 @@
   }
   function savePublicCache(data) {
     try {
-      const cachedSettings = { ...data.settings, heroImage: String(data.settings.heroImage || '').startsWith('data:') ? '' : data.settings.heroImage, courts: (data.settings.courts || []).map(court => ({ ...court, image: String(court.image || '').startsWith('data:') ? '' : court.image })) };
+      const cachedSettings = { ...data.settings, heroImage: String(data.settings.heroImage || '').startsWith('data:') ? '' : data.settings.heroImage, heroImages: (data.settings.heroImages || []).map(image => String(image || '').startsWith('data:') ? '' : image).filter(Boolean), courts: (data.settings.courts || []).map(court => ({ ...court, image: String(court.image || '').startsWith('data:') ? '' : court.image })) };
       localStorage.setItem(PUBLIC_CACHE_KEY, JSON.stringify({ settings: cachedSettings, adminSetupRequired: data.adminSetupRequired }));
     } catch {}
   }
@@ -270,7 +293,7 @@
     ];
     const bookingTabs = bookingSectionData.map(([id, label, bookings]) => { const active = id === activeTab; return `<button type="button" class="admin-booking-tab${active ? ' active' : ''}" data-booking-tab="${id}" aria-pressed="${active}">${label}<span>${bookings.length}</span></button>`; }).join('');
     const bookingSections = bookingSectionData.map(([id, label, bookings]) => `<section class="admin-booking-section" data-booking-section="${id}"${id === activeTab ? '' : ' hidden'}><h4>${label} (${bookings.length})</h4>${bookingTable(bookings)}</section>`).join('');
-    openModal(`<h2 id="modalTitle">Admin dashboard</h2><p>Signed in as <b>${escapeHtml(adminEmail)}</b> · <button id="adminLogout" type="button">Sign out</button></p><div class="admin-box court-manager"><div class="admin-court-head"><h3>Courts</h3></div><div id="addCourtPanel" hidden>${courtForm()}</div><div id="courtEditorPanel" class="court-editor-top" hidden></div><div class="admin-court-grid">${courtItems || '<div class="empty-state">No courts yet.</div>'}<button class="admin-add-court" id="addCourtToggle" type="button" aria-label="Add a court" aria-expanded="false"><svg class="admin-add-court-icon" viewBox="0 0 320 320" role="img" aria-label="Add a court"><circle cx="160" cy="160" r="150" fill="#009499"/><path d="M160 82v156M82 160h156" fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round"/></svg></button></div></div><div class="admin-grid"><div class="admin-box"><h3>Payment and homepage settings</h3><label for="adminPayLink">HTTPS payment link</label><input id="adminPayLink" type="url" placeholder="https://…" value="${escapeHtml(settings.instapayUrl || '')}"><label for="adminQr">InstaPay QR (PNG, JPEG or WebP; 3 MB max)</label><input id="adminQr" type="file" accept="image/png,image/jpeg,image/webp"><label for="adminHeroImage">Homepage photo (optional)</label><input id="adminHeroImage" type="file" accept="image/png,image/jpeg,image/gif,image/webp"><div id="settingsMessage" class="payment-help" role="status"></div><button class="pill" id="saveSettings">Save settings</button></div><div class="admin-box"><h3>Change admin account</h3><label for="newAdminEmail">Email</label><input id="newAdminEmail" type="email" maxlength="254" value="${escapeHtml(adminEmail)}"><label for="currentAdminPassword">Current password</label><div class="password-control"><input id="currentAdminPassword" type="password" autocomplete="current-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><label for="newAdminPassword">New password (leave empty to keep it)</label><div class="password-control"><input id="newAdminPassword" type="password" minlength="12" maxlength="200" autocomplete="new-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><div id="passwordMessage" class="payment-help" role="status"></div><button class="pill" id="saveAccount">Update account</button></div></div><div class="admin-box"><h3>Bookings (${adminBookings.length})</h3><div id="bookingAdminNotice" class="payment-help" role="status"></div><div class="admin-booking-tabs" role="group" aria-label="Filter bookings by status">${bookingTabs}</div>${bookingSections}</div><div class="admin-box contact-settings-manager"><h3>Contact information</h3><p>Update the phone numbers and email address customers use to reach the club.</p><div class="contact-settings-actions"><button class="pill" id="phoneSettings" type="button">Phone numbers settings</button><button class="pill" id="emailSettings" type="button">Email address settings</button></div></div>`, true);
+    openModal(`<h2 id="modalTitle">Admin dashboard</h2><p>Signed in as <b>${escapeHtml(adminEmail)}</b> · <button id="adminLogout" type="button">Sign out</button></p><div class="admin-box homepage-settings-launcher"><div><h3>Home page</h3><p>Manage the photos shown on the home page.</p></div><button class="pill" id="homePageSettings" type="button">Home page settings</button></div><div class="admin-box court-manager"><div class="admin-court-head"><h3>Courts</h3></div><div id="addCourtPanel" hidden>${courtForm()}</div><div id="courtEditorPanel" class="court-editor-top" hidden></div><div class="admin-court-grid">${courtItems || '<div class="empty-state">No courts yet.</div>'}<button class="admin-add-court" id="addCourtToggle" type="button" aria-label="Add a court" aria-expanded="false"><svg class="admin-add-court-icon" viewBox="0 0 320 320" role="img" aria-label="Add a court"><circle cx="160" cy="160" r="150" fill="#009499"/><path d="M160 82v156M82 160h156" fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round"/></svg></button></div></div><div class="admin-grid"><div class="admin-box"><h3>Payment settings</h3><label for="adminPayLink">HTTPS payment link</label><input id="adminPayLink" type="url" placeholder="https://…" value="${escapeHtml(settings.instapayUrl || '')}"><label for="adminQr">InstaPay QR (PNG, JPEG or WebP; 3 MB max)</label><input id="adminQr" type="file" accept="image/png,image/jpeg,image/webp"><div id="settingsMessage" class="payment-help" role="status"></div><button class="pill" id="saveSettings">Save settings</button></div><div class="admin-box"><h3>Change admin account</h3><label for="newAdminEmail">Email</label><input id="newAdminEmail" type="email" maxlength="254" value="${escapeHtml(adminEmail)}"><label for="currentAdminPassword">Current password</label><div class="password-control"><input id="currentAdminPassword" type="password" autocomplete="current-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><label for="newAdminPassword">New password (leave empty to keep it)</label><div class="password-control"><input id="newAdminPassword" type="password" minlength="12" maxlength="200" autocomplete="new-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><div id="passwordMessage" class="payment-help" role="status"></div><button class="pill" id="saveAccount">Update account</button></div></div><div class="admin-box"><h3>Bookings (${adminBookings.length})</h3><div id="bookingAdminNotice" class="payment-help" role="status"></div><div class="admin-booking-tabs" role="group" aria-label="Filter bookings by status">${bookingTabs}</div>${bookingSections}</div><div class="admin-box contact-settings-manager"><h3>Contact information</h3><p>Update the phone numbers and email address customers use to reach the club.</p><div class="contact-settings-actions"><button class="pill" id="phoneSettings" type="button">Phone numbers settings</button><button class="pill" id="emailSettings" type="button">Email address settings</button></div></div>`, true);
     modalContent.querySelectorAll('[data-booking-tab]').forEach(button => button.addEventListener('click', () => {
       const selectedTab = button.dataset.bookingTab;
       modalContent.querySelectorAll('[data-booking-tab]').forEach(tab => { const active = tab.dataset.bookingTab === selectedTab; tab.classList.toggle('active', active); tab.setAttribute('aria-pressed', String(active)); });
@@ -300,6 +323,54 @@
         if (adminModal) adminModal.scrollTop = modalTop;
         window.scrollTo(pageX, pageY);
       }
+    }
+    function openHomePageSettings() {
+      $('#homePageSettingsPopup')?.remove();
+      const layer = document.createElement('div');
+      layer.className = 'homepage-settings-backdrop'; layer.id = 'homePageSettingsPopup';
+      layer.innerHTML = '<section class="homepage-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="homePagePopupTitle"><header><div><h3 id="homePagePopupTitle">Home page</h3><p>Choose several photos for the home page slideshow. Add up to 10 images, each under 3 MB.</p></div><button type="button" class="contact-popup-close" data-home-popup-close aria-label="Close">×</button></header><div id="homepagePhotoGallery" class="homepage-photo-gallery"></div><input id="homePagePhotoUpload" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden><p id="homePageSettingsMessage" class="payment-help" role="status"></p><div class="contact-popup-actions"><button type="button" class="contact-popup-secondary" data-home-popup-close>Cancel</button><button type="button" class="pill" id="saveHomePagePhotos">Save photos</button></div></section>';
+      modal.append(layer);
+      layer.addEventListener('click', event => {
+        if (event.target === layer || event.target.closest('[data-home-popup-close]')) layer.remove();
+      });
+      const gallery = $('#homepagePhotoGallery', layer), upload = $('#homePagePhotoUpload', layer), message = $('#homePageSettingsMessage', layer);
+      let photos = (Array.isArray(settings.heroImages) ? settings.heroImages : []).slice(0, 10);
+      function renderPhotos() {
+        gallery.replaceChildren();
+        photos.forEach((source, index) => {
+          const card = document.createElement('div'); card.className = 'homepage-photo-card';
+          const photo = document.createElement('img'); photo.src = safeImage(source) || ''; photo.alt = 'Home page photo ' + (index + 1); photo.loading = 'lazy';
+          const actions = document.createElement('div'); actions.className = 'homepage-photo-actions';
+          const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'homepage-photo-remove'; remove.textContent = 'Remove'; remove.setAttribute('aria-label', 'Remove home page photo ' + (index + 1));
+          remove.addEventListener('click', () => { photos.splice(index, 1); renderPhotos(); });
+          actions.append(remove); card.append(photo, actions); gallery.append(card);
+        });
+        const add = document.createElement('button'); add.type = 'button'; add.className = 'homepage-photo-add';
+        add.disabled = photos.length >= 10; add.setAttribute('aria-label', 'Add a home page photo');
+        add.innerHTML = '<svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="56" fill="currentColor"/><path d="M60 31v58M31 60h58" fill="none" stroke="#fff" stroke-width="11" stroke-linecap="round"/></svg><span>Add photo</span>';
+        add.addEventListener('click', () => upload.click()); gallery.append(add);
+      }
+      renderPhotos();
+      upload.addEventListener('change', async () => {
+        const files = Array.from(upload.files || []);
+        if (photos.length + files.length > 10) { showNotice(message, 'Home page supports up to 10 photos.'); upload.value = ''; return; }
+        try {
+          const selected = await Promise.all(files.map(imageFileData));
+          photos.push(...selected.filter(Boolean)); renderPhotos();
+        } catch (error) { showNotice(message, error.message); }
+        upload.value = '';
+      });
+      $('#saveHomePagePhotos', layer).addEventListener('click', async event => {
+        await runAdminSave(event.currentTarget, message, 'Home page photos saved.', async () => {
+          const result = await patch('/api/admin/settings', { heroImages: photos });
+          const saved = Array.isArray(result.settings?.heroImages) ? result.settings.heroImages : null;
+          if (!saved || saved.length !== photos.length || saved.some((photo, index) => photo !== photos[index])) {
+            throw new Error('Home page photos need the latest Apps Script code. Update Code.gs in Apps Script and redeploy the web app.');
+          }
+          settings = normalizeSettings(result.settings); adminDashboardData.settings = settings;
+          savePublicCache({ settings, adminSetupRequired }); refreshPublic();
+        });
+      });
     }
     function openContactSettings(kind) {
       $('#contactSettingsPopup')?.remove();
@@ -358,6 +429,7 @@
         });
       }
     }
+    $('#homePageSettings').addEventListener('click', openHomePageSettings);
     $('#phoneSettings').addEventListener('click', () => openContactSettings('phones'));
     $('#emailSettings').addEventListener('click', () => openContactSettings('email'));
     $('#adminLogout').addEventListener('click', async () => { try { await post('/api/admin/logout', {}); } finally { closeModal(); } });
@@ -439,8 +511,8 @@
       const message = $('#settingsMessage');
       await runAdminSave(event.currentTarget, message, 'Settings saved.', async () => {
         const body = { instapayUrl: $('#adminPayLink').value.trim() };
-        const qr = await imageFileData($('#adminQr').files[0]), hero = await imageFileData($('#adminHeroImage').files[0]);
-        if (qr) body.instapayQr = qr; if (hero) body.heroImage = hero;
+        const qr = await imageFileData($('#adminQr').files[0]);
+        if (qr) body.instapayQr = qr;
         const result = await patch('/api/admin/settings', body);
         settings = normalizeSettings(result.settings); adminDashboardData.settings = settings;
         savePublicCache({ settings, adminSetupRequired }); refreshPublic();
@@ -496,7 +568,8 @@
   function finishIntro() {
     if (introFinished) return; introFinished = true;
     const loader = $('#siteLoader');
-    if (loader) { loader.classList.add('is-done'); window.setTimeout(() => loader.remove(), 650); }
+    if (loader) { loader.classList.add('is-done'); window.setTimeout(() => { loader.remove(); document.documentElement.classList.remove('site-loading'); }, 650); }
+    else document.documentElement.classList.remove('site-loading');
   }
   function checkIntroReadiness() {
     if (introFinished) return;
