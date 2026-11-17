@@ -588,8 +588,9 @@
       event.preventDefault(); const message = $('.formMessage', form), values = new FormData(form), id = form.dataset.courtId, saveButton = form.querySelector('button[type="submit"]') || form.querySelector('.pill');
       const openingMinute = timeInputMinute(values.get('openingTime'));
       let closingMinute = timeInputMinute(values.get('closingTime'), true);
-      if (closingMinute <= openingMinute) closingMinute += 1440;
-      const overnight = closingMinute > 1440;
+      const closingIsDawn = closingMinute >= 60 && closingMinute <= 240;
+      if (closingIsDawn || closingMinute <= openingMinute) closingMinute += 1440;
+      const overnight = closingMinute >= 1440;
       const rateStart = field => { const minute = timeInputMinute(values.get(field)); return overnight && minute < openingMinute ? minute + 1440 : minute; };
       const court = { name: values.get('name'), location: values.get('location'), openingMinute, closingMinute, dayRateStartMinute: rateStart('dayRateStartTime'), nightRateStartMinute: rateStart('nightRateStartTime'), dayRate: Number(values.get('dayRate')), nightRate: Number(values.get('nightRate')), displayPrice: Number(values.get('dayRate')), description: values.get('description') };
       const hours = courtHours(court); if (court.dayRateStartMinute < hours.opening || court.dayRateStartMinute >= hours.closing || court.nightRateStartMinute <= court.dayRateStartMinute) return showNotice(message, 'Set the day rate at or after opening, and the night rate after the day rate. If the court closes before the night rate starts, only the day rate will apply.');
