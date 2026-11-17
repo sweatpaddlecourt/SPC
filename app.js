@@ -107,6 +107,37 @@
       dismiss() { layer.remove(); }
     };
   }
+  function showActionConfirmation(title, detail) {
+    $("#adminActionPopup")?.remove();
+    const layer = document.createElement("div");
+    layer.className = "admin-action-backdrop";
+    layer.id = "adminActionPopup";
+    layer.innerHTML = '<section class="admin-action-dialog admin-action-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="adminDeleteTitle" aria-describedby="adminDeleteDetail"><span class="admin-action-icon is-warning" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></span><h2 id="adminDeleteTitle"></h2><p id="adminDeleteDetail"></p><div class="admin-action-buttons"><button type="button" class="admin-action-cancel">Keep booking</button><button type="button" class="admin-action-delete">Delete booking</button></div></section>';
+    layer.querySelector("#adminDeleteTitle").textContent = title;
+    layer.querySelector("#adminDeleteDetail").textContent = detail;
+    document.body.append(layer);
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = confirmed => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener("keydown", onKeyDown, true);
+        layer.remove();
+        resolve(confirmed);
+      };
+      const onKeyDown = event => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        finish(false);
+      };
+      document.addEventListener("keydown", onKeyDown, true);
+      layer.addEventListener("click", event => { if (event.target === layer) finish(false); });
+      layer.querySelector(".admin-action-cancel").addEventListener("click", () => finish(false));
+      layer.querySelector(".admin-action-delete").addEventListener("click", () => finish(true));
+      layer.querySelector(".admin-action-cancel").focus();
+    });
+  }
   function safeImage(value) {
     if (typeof value !== 'string' || value.length > 5_000_000) return '';
     if (/^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i.test(value)) return value;
@@ -648,7 +679,8 @@
       const reference = button.dataset.deleteBooking;
       const booking = adminDashboardData?.bookings.find(item => item.reference === reference);
       if (!booking || !/^cancel/i.test(booking.status || '')) return;
-      if (!window.confirm('Delete this cancelled booking and its payment proof? This cannot be undone.')) return;
+      const confirmed = await showActionConfirmation('Delete cancelled booking?', 'This permanently removes the booking and its stored payment proof.');
+      if (!confirmed) return;
       button.disabled = true;
       const action = showActionPopup('Deleting cancelled booking…', 'Removing the booking and its stored payment proof.');
       try {
