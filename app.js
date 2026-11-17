@@ -12,7 +12,12 @@
   const localDate = bookingClock().dateISO;
   dateInput.min = localDate;
   dateInput.value = localDate;
-  let settings = { courts: [], instapayUrl: '', instapayQr: '', heroImage: '' };
+  const DEFAULT_SITE_SETTINGS = { courts: [], instapayUrl: '', instapayQr: '', heroImage: '', contactPhones: ['0927 535 8196', '0908 907 8224', '0933 536 8205'], contactEmail: 'maryjeandagondon@gmail.com', contactName: 'Sweat Paddle Court', contactAddress: 'San Antonio, Brgy. Linao, Talisay City, Cebu', businessHours: 'Open daily' };
+  function normalizeSettings(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    return { ...DEFAULT_SITE_SETTINGS, ...source, courts: Array.isArray(source.courts) ? source.courts : [], contactPhones: Array.isArray(source.contactPhones) ? source.contactPhones.filter(phone => typeof phone === 'string' && phone.trim()).slice(0, 3) : DEFAULT_SITE_SETTINGS.contactPhones.slice() };
+  }
+  let settings = normalizeSettings();
   let adminSetupRequired = true;
   let adminEmail = '';
   let adminDashboardData = null;
@@ -93,7 +98,7 @@
     }
     grid.innerHTML = settings.courts.map(court => {
       const photo = safeImage(court.image);
-      return `<article class="court-card"><div class="court-cover"><div class="cover-roof"></div><div class="cover-floor"></div><div class="cover-net"></div>${photo ? `<img src="${photo}" alt="${escapeHtml(court.name)} at Sweat Paddle Court" loading="lazy" decoding="async">` : ''}<span class="court-badge">Daily · ${formatTime(courtHours(court).opening)}–${formatTime(courtHours(court).closing)}</span><span class="available-badge">Available</span></div><div class="court-body"><div class="court-title-row"><div><h2>${escapeHtml(court.name)}</h2><div class="court-loc">⌖ ${escapeHtml(court.location || 'Sweat Paddle Court')}</div></div><div class="court-price">${money(court.displayPrice || court.dayRate)}<small>/ hour</small></div></div><p class="court-desc">${escapeHtml(court.description || '')}</p><a class="details-link" href="#" data-details="${escapeHtml(court.id)}">See full description →</a><div class="time-pricing"><div class="pricing-head">₱ &nbsp;Time-Based Pricing</div>${pricingRows(court)}</div><div class="court-foot"><span class="pax">♙ &nbsp;Up to ${escapeHtml(court.maxPlayers || 10)} pax</span><button class="book-now" data-book="${escapeHtml(court.id)}">Book Now</button></div></div></article>`;
+      return `<article class="court-card"><div class="court-cover"><div class="cover-roof"></div><div class="cover-floor"></div><div class="cover-net"></div>${photo ? `<img src="${photo}" alt="${escapeHtml(court.name)} at Sweat Paddle Court" loading="lazy" decoding="async">` : ''}<span class="court-badge">Daily · ${formatTime(courtHours(court).opening)}–${formatTime(courtHours(court).closing)}</span><span class="available-badge">Available</span></div><div class="court-body"><div class="court-title-row"><div><h2>${escapeHtml(court.name)}</h2><div class="court-loc"><svg class="location-pin-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-7.2 8-13a8 8 0 1 0-16 0c0 5.8 8 13 8 13Z"/><circle cx="12" cy="9" r="2.7"/></svg>${escapeHtml(court.location || 'Sweat Paddle Court')}</div></div><div class="court-price">${money(court.displayPrice || court.dayRate)}<small>/ hour</small></div></div><p class="court-desc">${escapeHtml(court.description || '')}</p><a class="details-link" href="#" data-details="${escapeHtml(court.id)}">See full description →</a><div class="time-pricing"><div class="pricing-head">₱ &nbsp;Time-Based Pricing</div>${pricingRows(court)}</div><div class="court-foot"><button class="book-now" data-book="${escapeHtml(court.id)}">Book Now</button></div></div></article>`;
     }).join('');
     grid.querySelectorAll('[data-book]').forEach(button => button.addEventListener('click', () => openBooking(button.dataset.book)));
     grid.querySelectorAll('[data-details]').forEach(link => link.addEventListener('click', event => {
@@ -101,7 +106,20 @@
       openModal(`<h2 id="modalTitle">${escapeHtml(court.name)}</h2><p>${escapeHtml(court.description || '')}</p><p><b>${escapeHtml(court.location || 'Sweat Paddle Court')}</b> · Up to ${escapeHtml(court.maxPlayers || 10)} players</p><button class="pill" data-close-modal>Close</button>`);
     }));
   }
-  function refreshPublic() { renderCourts(); renderHero(); }
+  function renderContact() {
+    const phones = Array.isArray(settings.contactPhones) ? settings.contactPhones.filter(Boolean).slice(0, 3) : [];
+    const phoneRow = $('#contactPhoneRow'), phoneList = $('#contactPhones');
+    phoneRow.hidden = !phones.length; phoneList.replaceChildren(...phones.map(phone => {
+      const link = document.createElement('a'); link.href = `tel:${phone.replace(/[^\d+]/g, '')}`; link.textContent = phone; return link;
+    }));
+    const email = String(settings.contactEmail || ''); $('#contactEmailRow').hidden = !email;
+    const emailLink = $('#contactEmail'); emailLink.textContent = email; emailLink.href = email ? `mailto:${email}` : '';
+    $('#contactVenueName').textContent = settings.contactName || 'Sweat Paddle Court';
+    $('#contactAddress').textContent = settings.contactAddress || '';
+    $('#contactLocationRow').hidden = !settings.contactAddress;
+    $('#businessHours').textContent = settings.businessHours || 'Open daily';
+  }
+  function refreshPublic() { renderCourts(); renderHero(); renderContact(); }
   const PUBLIC_CACHE_KEY = 'sp_public_settings_cache_v1';
   function readPublicCache() {
     try { const cached = JSON.parse(localStorage.getItem(PUBLIC_CACHE_KEY) || 'null'); if (cached?.settings && Array.isArray(cached.settings.courts)) return cached; } catch {}
@@ -235,8 +253,9 @@
   async function renderAdmin(options = {}) {
     const activeTab = options.activeTab || modalContent.querySelector('[data-booking-tab].active')?.dataset.bookingTab || 'pending';
     const data = options.useCache && adminDashboardData ? adminDashboardData : await api('/api/admin/dashboard');
-    adminDashboardData = data; settings = data.settings; adminEmail = data.user.email;
+    adminDashboardData = data; settings = normalizeSettings(data.settings); adminEmail = data.user.email;
     const courtItems = settings.courts.map(adminCourtItem).join('');
+    const contactPhoneFields = Array.from({ length: 3 }, (_, index) => `<label for="contactPhone${index + 1}">Phone number ${index + 1}</label><input id="contactPhone${index + 1}" type="tel" maxlength="40" value="${escapeHtml(settings.contactPhones[index] || '')}">`).join('');
     const adminBookings = data.bookings.filter(booking => /^cancel/i.test(booking.status || '') || booking.paymentReference || booking.hasReceipt);
     const pendingBookings = adminBookings.filter(booking => !/^cancel/i.test(booking.status || '') && booking.status !== 'Paid');
     const paidBookings = adminBookings.filter(booking => booking.status === 'Paid');
@@ -252,7 +271,7 @@
     ];
     const bookingTabs = bookingSectionData.map(([id, label, bookings]) => { const active = id === activeTab; return `<button type="button" class="admin-booking-tab${active ? ' active' : ''}" data-booking-tab="${id}" aria-pressed="${active}">${label}<span>${bookings.length}</span></button>`; }).join('');
     const bookingSections = bookingSectionData.map(([id, label, bookings]) => `<section class="admin-booking-section" data-booking-section="${id}"${id === activeTab ? '' : ' hidden'}><h4>${label} (${bookings.length})</h4>${bookingTable(bookings)}</section>`).join('');
-    openModal(`<h2 id="modalTitle">Admin dashboard</h2><p>Signed in as <b>${escapeHtml(adminEmail)}</b> · <button id="adminLogout" type="button">Sign out</button></p><div class="admin-box court-manager"><div class="admin-court-head"><h3>Courts</h3></div><div id="addCourtPanel" hidden>${courtForm()}</div><div id="courtEditorPanel" class="court-editor-top" hidden></div><div class="admin-court-grid">${courtItems || '<div class="empty-state">No courts yet.</div>'}<button class="admin-add-court" id="addCourtToggle" type="button" aria-label="Add a court" aria-expanded="false"><svg class="admin-add-court-icon" viewBox="0 0 320 320" role="img" aria-label="Add a court"><circle cx="160" cy="160" r="150" fill="#009499"/><path d="M160 82v156M82 160h156" fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round"/></svg></button></div></div><div class="admin-grid"><div class="admin-box"><h3>Payment and homepage settings</h3><label for="adminPayLink">HTTPS payment link</label><input id="adminPayLink" type="url" placeholder="https://…" value="${escapeHtml(settings.instapayUrl || '')}"><label for="adminQr">InstaPay QR (PNG, JPEG or WebP; 3 MB max)</label><input id="adminQr" type="file" accept="image/png,image/jpeg,image/webp"><label for="adminHeroImage">Homepage photo (optional)</label><input id="adminHeroImage" type="file" accept="image/png,image/jpeg,image/gif,image/webp"><div id="settingsMessage" class="payment-help" role="status"></div><button class="pill" id="saveSettings">Save settings</button></div><div class="admin-box"><h3>Change admin account</h3><label for="newAdminEmail">Email</label><input id="newAdminEmail" type="email" maxlength="254" value="${escapeHtml(adminEmail)}"><label for="currentAdminPassword">Current password</label><div class="password-control"><input id="currentAdminPassword" type="password" autocomplete="current-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><label for="newAdminPassword">New password (leave empty to keep it)</label><div class="password-control"><input id="newAdminPassword" type="password" minlength="12" maxlength="200" autocomplete="new-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><div id="passwordMessage" class="payment-help" role="status"></div><button class="pill" id="saveAccount">Update account</button></div></div><div class="admin-box"><h3>Bookings (${adminBookings.length})</h3><div id="bookingAdminNotice" class="payment-help" role="status"></div><div class="admin-booking-tabs" role="group" aria-label="Filter bookings by status">${bookingTabs}</div>${bookingSections}</div>`, true);
+    openModal(`<h2 id="modalTitle">Admin dashboard</h2><p>Signed in as <b>${escapeHtml(adminEmail)}</b> · <button id="adminLogout" type="button">Sign out</button></p><div class="admin-box court-manager"><div class="admin-court-head"><h3>Courts</h3></div><div id="addCourtPanel" hidden>${courtForm()}</div><div id="courtEditorPanel" class="court-editor-top" hidden></div><div class="admin-court-grid">${courtItems || '<div class="empty-state">No courts yet.</div>'}<button class="admin-add-court" id="addCourtToggle" type="button" aria-label="Add a court" aria-expanded="false"><svg class="admin-add-court-icon" viewBox="0 0 320 320" role="img" aria-label="Add a court"><circle cx="160" cy="160" r="150" fill="#009499"/><path d="M160 82v156M82 160h156" fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round"/></svg></button></div></div><div class="admin-grid"><div class="admin-box"><h3>Payment and homepage settings</h3><label for="adminPayLink">HTTPS payment link</label><input id="adminPayLink" type="url" placeholder="https://…" value="${escapeHtml(settings.instapayUrl || '')}"><label for="adminQr">InstaPay QR (PNG, JPEG or WebP; 3 MB max)</label><input id="adminQr" type="file" accept="image/png,image/jpeg,image/webp"><label for="adminHeroImage">Homepage photo (optional)</label><input id="adminHeroImage" type="file" accept="image/png,image/jpeg,image/gif,image/webp"><div id="settingsMessage" class="payment-help" role="status"></div><button class="pill" id="saveSettings">Save settings</button></div><div class="admin-box"><h3>Contact information</h3>${contactPhoneFields}<label for="contactEmailInput">Email address</label><input id="contactEmailInput" type="email" maxlength="254" value="${escapeHtml(settings.contactEmail)}"><label for="contactNameInput">Venue name</label><input id="contactNameInput" type="text" maxlength="120" value="${escapeHtml(settings.contactName)}"><label for="contactAddressInput">Location address</label><textarea id="contactAddressInput" maxlength="300" rows="3">${escapeHtml(settings.contactAddress)}</textarea><label for="businessHoursInput">Hours label</label><input id="businessHoursInput" type="text" maxlength="100" value="${escapeHtml(settings.businessHours)}"><div id="contactSettingsMessage" class="payment-help" role="status"></div><button class="pill" id="saveContactSettings">Save contact information</button></div><div class="admin-box"><h3>Change admin account</h3><label for="newAdminEmail">Email</label><input id="newAdminEmail" type="email" maxlength="254" value="${escapeHtml(adminEmail)}"><label for="currentAdminPassword">Current password</label><div class="password-control"><input id="currentAdminPassword" type="password" autocomplete="current-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><label for="newAdminPassword">New password (leave empty to keep it)</label><div class="password-control"><input id="newAdminPassword" type="password" minlength="12" maxlength="200" autocomplete="new-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><div id="passwordMessage" class="payment-help" role="status"></div><button class="pill" id="saveAccount">Update account</button></div></div><div class="admin-box"><h3>Bookings (${adminBookings.length})</h3><div id="bookingAdminNotice" class="payment-help" role="status"></div><div class="admin-booking-tabs" role="group" aria-label="Filter bookings by status">${bookingTabs}</div>${bookingSections}</div>`, true);
     modalContent.querySelectorAll('[data-booking-tab]').forEach(button => button.addEventListener('click', () => {
       const selectedTab = button.dataset.bookingTab;
       modalContent.querySelectorAll('[data-booking-tab]').forEach(tab => { const active = tab.dataset.bookingTab === selectedTab; tab.classList.toggle('active', active); tab.setAttribute('aria-pressed', String(active)); });
@@ -326,13 +345,13 @@
           return;
         }
         const result = await post('/api/admin/courts', court);
-        const refreshed = await api('/api/admin/dashboard'); settings = refreshed.settings; refreshPublic(); await renderAdmin();
+        const refreshed = await api('/api/admin/dashboard'); settings = normalizeSettings(refreshed.settings); refreshPublic(); await renderAdmin();
       } catch (error) { if (id) { courtEditorPanel.hidden = false; saveButton.disabled = false; saveButton.textContent = 'Save court'; } showNotice(message, error.message); }
     }));
     modalContent.querySelectorAll('[data-delete-court]').forEach(button => button.addEventListener('click', async () => {
       const id = button.dataset.deleteCourt;
       if (!window.confirm(`Delete ${button.dataset.courtName}? This will remove it from the public court list.`)) return;
-      try { const result = await api(`/api/admin/courts/${encodeURIComponent(id)}`, { method: 'DELETE' }); settings = result.settings; refreshPublic(); await renderAdmin(); } catch (error) { showError(error.message); }
+      try { const result = await api(`/api/admin/courts/${encodeURIComponent(id)}`, { method: 'DELETE' }); settings = normalizeSettings(result.settings); refreshPublic(); await renderAdmin(); } catch (error) { showError(error.message); }
     }));
     $('#saveSettings').addEventListener('click', async () => {
       const message = $('#settingsMessage');
@@ -340,7 +359,16 @@
         const body = { instapayUrl: $('#adminPayLink').value.trim() };
         const qr = await imageFileData($('#adminQr').files[0]), hero = await imageFileData($('#adminHeroImage').files[0]);
         if (qr) body.instapayQr = qr; if (hero) body.heroImage = hero;
-        const result = await patch('/api/admin/settings', body); settings = result.settings; refreshPublic(); showNotice(message, 'Settings saved.', false);
+        const result = await patch('/api/admin/settings', body); settings = normalizeSettings(result.settings); refreshPublic(); showNotice(message, 'Settings saved.', false);
+      } catch (error) { showNotice(message, error.message); }
+    });
+    $('#saveContactSettings').addEventListener('click', async () => {
+      const message = $('#contactSettingsMessage');
+      try {
+        const body = { contactPhones: [1, 2, 3].map(index => $(`#contactPhone${index}`).value.trim()).filter(Boolean), contactEmail: $('#contactEmailInput').value.trim(), contactName: $('#contactNameInput').value.trim(), contactAddress: $('#contactAddressInput').value.trim(), businessHours: $('#businessHoursInput').value.trim() };
+        const result = await patch('/api/admin/settings', body);
+        settings = normalizeSettings(result.settings); adminDashboardData.settings = settings; savePublicCache({ settings, adminSetupRequired }); refreshPublic();
+        showNotice(message, 'Contact information saved.', false);
       } catch (error) { showNotice(message, error.message); }
     });
     $('#saveAccount').addEventListener('click', async () => {
@@ -407,7 +435,7 @@
     const retry = $('#retryPublicData'); if (retry) { retry.disabled = true; retry.textContent = 'Connecting…'; }
     try {
       const data = await api('/api/public', { timeoutMs: 12000 });
-      settings = data.settings; adminSetupRequired = data.adminSetupRequired; savePublicCache(data); refreshPublic();
+      settings = normalizeSettings(data.settings); adminSetupRequired = data.adminSetupRequired; savePublicCache({ ...data, settings }); refreshPublic();
     } catch (error) {
       if (!settings.courts.length) showPublicUnavailable(error);
       else {
@@ -420,7 +448,7 @@
   $('#courtGrid').addEventListener('click', event => { if (event.target.closest('#retryPublicData')) loadPublicSettings(); });
   function start() {
     const cached = readPublicCache();
-    if (cached) { settings = cached.settings; adminSetupRequired = cached.adminSetupRequired; refreshPublic(); publicContentReady = true; }
+    if (cached) { settings = normalizeSettings(cached.settings); adminSetupRequired = cached.adminSetupRequired; refreshPublic(); publicContentReady = true; }
     else $('#courtGrid').innerHTML = '<div class="empty-state court-empty"><span class="empty-courts-icon">…</span><h2>Loading courts</h2><p>Getting the latest court hours and prices.</p></div>';
     checkIntroReadiness();
     loadPublicSettings();
