@@ -288,7 +288,8 @@
     adminDashboardData = data; settings = normalizeSettings(data.settings); adminEmail = data.user.email;
     const courtItems = settings.courts.map(adminCourtItem).join('');
     let adminBookings = Array.isArray(data.bookings) ? data.bookings : [];
-    let pendingBookings = adminBookings.filter(booking => !/^cancel/i.test(booking.status || '') && booking.status !== 'Paid');
+    function hasBookingProof(booking) { return Boolean(String(booking.paymentReference || '').trim() || booking.hasReceipt); }
+    let pendingBookings = adminBookings.filter(booking => !/^cancel/i.test(booking.status || '') && booking.status !== 'Paid' && hasBookingProof(booking));
     let paidBookings = adminBookings.filter(booking => booking.status === 'Paid');
     let cancelledBookings = adminBookings.filter(booking => /^cancel/i.test(booking.status || ''));
     function bookingTable(bookings) {
@@ -306,7 +307,7 @@
     const bookingSections = bookingSectionData.map(([id, label, bookings]) => `<section class="admin-booking-section" data-booking-section="${id}"${id === activeTab ? '' : ' hidden'}><h4>${label} (${bookings.length})</h4>${bookingTable(bookings)}</section>`).join('');
     function applyLiveBookings(bookings) {
       adminBookings = Array.isArray(bookings) ? bookings : [];
-      pendingBookings = adminBookings.filter(booking => !/^cancel/i.test(booking.status || '') && booking.status !== 'Paid');
+      pendingBookings = adminBookings.filter(booking => !/^cancel/i.test(booking.status || '') && booking.status !== 'Paid' && hasBookingProof(booking));
       paidBookings = adminBookings.filter(booking => booking.status === 'Paid');
       cancelledBookings = adminBookings.filter(booking => /^cancel/i.test(booking.status || ''));
       bookingSectionData = [['pending', 'Pending', pendingBookings], ['paid', 'Paid', paidBookings], ['cancelled', 'Cancelled', cancelledBookings]];
@@ -572,7 +573,7 @@
         if (result.cancelled) {
           try { adminDashboardData = await api('/api/admin/dashboard'); }
           catch (refreshError) { showNotice($('#bookingAdminNotice'), `Saved, but the refreshed data could not load: ${refreshError.message}`); return; }
-          await renderAdmin({ useCache: true, activeTab: 'cancelled' });
+          await renderAdmin({ useCache: true, activeTab: tab });
           if (result.message) showNotice($('#bookingAdminNotice'), result.message, false);
         } else {
           try { adminDashboardData = await api('/api/admin/dashboard'); await renderAdmin({ useCache: true, activeTab: tab }); }
@@ -586,7 +587,7 @@
     }
     function bindBookingActions() {
     modalContent.querySelectorAll('[data-paid]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.paid, 'Paid', 'paid')));
-    modalContent.querySelectorAll('[data-cancel-booking]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.cancelBooking, 'Cancelled', 'cancelled')));
+    modalContent.querySelectorAll('[data-cancel-booking]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.cancelBooking, 'Cancelled', 'pending')));
     modalContent.querySelectorAll('[data-payment-proof]').forEach(button => button.addEventListener('click', async () => {
       $('#adminReceiptPreview')?.remove();
       const reference = button.dataset.paymentProof;
