@@ -23,17 +23,18 @@
   let adminEmail = '';
   let adminDashboardData = null;
   let adminBookingSearchQuery = '';
-  let adminBookingsPollTimer = null;
+  let adminBookingsPollTimer = null, bookingAvailabilityPollTimer = null;
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
   function openModal(html, admin = false) {
+    if (bookingAvailabilityPollTimer) { window.clearInterval(bookingAvailabilityPollTimer); bookingAvailabilityPollTimer = null; }
     if (!admin && adminBookingsPollTimer) { window.clearInterval(adminBookingsPollTimer); adminBookingsPollTimer = null; }
     modalContent.innerHTML = html;
     const box = $('.modal', modal);
     box.classList.toggle('admin-modal', admin);
     modal.classList.add('open');
   }
-  function closeModal() { modal.classList.remove('open'); if (adminBookingsPollTimer) { window.clearInterval(adminBookingsPollTimer); adminBookingsPollTimer = null; } }
+  function closeModal() { modal.classList.remove('open'); if (adminBookingsPollTimer) { window.clearInterval(adminBookingsPollTimer); adminBookingsPollTimer = null; } if (bookingAvailabilityPollTimer) { window.clearInterval(bookingAvailabilityPollTimer); bookingAvailabilityPollTimer = null; } }
   $('#close').addEventListener('click', closeModal);
   modal.addEventListener('click', event => { if (event.target === modal || event.target.closest('[data-close-modal]')) closeModal(); });
   document.addEventListener('keydown', event => {
@@ -256,21 +257,34 @@
     openModal(`<h2 id="modalTitle">Book ${escapeHtml(court.name)}</h2><p>Choose one or more open hours, then enter your name.</p><div class="summary"><b>${escapeHtml(court.name)}</b><br>${escapeHtml(court.location || 'Sweat Paddle Court')}</div><div class="modal-fields"><label>Date<input id="bookingDate" type="date" min="${bookingDay}" value="${bookingDay}" required></label><div><label>Available times · select multiple</label><div class="slots" id="bookingSlots"></div><div id="bookingPendingWarning" class="pending-booking-warning" role="alert" hidden></div></div><label>Your name<input id="bookingName" maxlength="80" required autocomplete="name" placeholder="Name"></label></div><p id="bookingPrice" class="payment-help">Select times to see your total.</p><p id="bookingError" class="payment-help" role="alert"></p><a class="booking-facebook-contact" href="https://www.facebook.com/profile.php?id=61595968972214" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#1877f2"/><path fill="#fff" d="M13.4 20v-7.1h2.4l.4-2.8h-2.8V8.3c0-.8.2-1.4 1.4-1.4h1.5V4.4c-.3 0-1.2-.1-2.2-.1-2.2 0-3.7 1.3-3.7 3.8v2.1H8v2.8h2.4V20z"/></svg>Need booking confirmation? Message us on Facebook ↗</a><button class="pill" id="submitBooking">Continue to payment →</button>`);
     const date = $('#bookingDate'), slotBox = $('#bookingSlots'), price = $('#bookingPrice'), error = $('#bookingError'), pendingWarning = $('#bookingPendingWarning'), selected = new Map(); let pending = new Set();
     function updatePendingWarning() { const hasPendingSelection = [...selected.keys()].some(minute => pending.has(minute)); pendingWarning.hidden = !hasPendingSelection; if (hasPendingSelection) pendingWarning.innerHTML = '<svg class="facebook-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#1877f2"/><path fill="#fff" d="M13.4 20v-7.1h2.4l.4-2.8h-2.8V8.3c0-.8.2-1.4 1.4-1.4h1.5V4.4c-.3 0-1.2-.1-2.2-.1-2.2 0-3.7 1.3-3.7 3.8v2.1H8v2.8h2.4V20z"/></svg><span>This hour has a payment waiting for club verification. Your request may be voided if the earlier booking is confirmed. Check with the club before paying: <a href="https://www.facebook.com/profile.php?id=61595968972214" target="_blank" rel="noopener noreferrer">Message us on Facebook ↗</a></span>'; }
+    let availabilityLoadInProgress = false, availabilityRefreshQueued = false;
     async function loadSlots(reset = false) {
-      if (reset) { selected.clear(); $('#bookingPendingWarning').hidden = true; } slotBox.textContent = 'Loading availability…';
+      if (reset) { selected.clear(); pendingWarning.hidden = true; slotBox.textContent = 'Loading availability…'; }
+      if (availabilityLoadInProgress) { availabilityRefreshQueued = true; return; }
+      availabilityLoadInProgress = true;
+      const requestedDate = date.value;
+      const hasExistingSlots = slotBox.childElementCount > 0;
+      if (!hasExistingSlots) slotBox.textContent = 'Loading availability…';
       try {
-        const data = await api(`/api/availability?date=${encodeURIComponent(date.value)}&courtId=${encodeURIComponent(courtId)}`), busy = new Set(data.booked); pending = new Set(data.pending || []);
+        const data = await api(`/api/availability?date=${encodeURIComponent(requestedDate)}&courtId=${encodeURIComponent(courtId)}`), busy = new Set(data.booked); pending = new Set(data.pending || []);
+        if (date.value !== requestedDate || !modal.classList.contains('open')) return;
         slotBox.replaceChildren(); let openCount = 0;
         const now = bookingClock();
         for (const slot of timeChoicesFor(court)) {
-          const button = document.createElement('button'); button.type = 'button'; button.className = 'slot'; const isPast = date.value === now.dateISO && slot.start < now.minuteOfDay, isBooked = busy.has(slot.start), isPending = pending.has(slot.start) && !isBooked; if (isBooked) { button.classList.add('booked'); button.style.backgroundColor = '#f8652a'; button.style.borderColor = '#f8652a'; button.style.color = '#fff'; button.style.opacity = '1'; } if (isPending) button.classList.add('pending-slot'); button.innerHTML = `<span class="slot-label">${slot.label}${isBooked ? ' · Booked' : isPast ? ' · Past' : ''}</span>${isPending ? '<span class="pending-slot-marker" role="img" aria-label="Pending booking awaiting verification"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M36 12A18 18 0 1 0 41 27" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M31 5h12v12M31 5l12 12M18 17h12M18 31h12M19 17c0 7 10 7 10 14" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><small>Pending review</small></span>' : ''}`; button.setAttribute('aria-label', `${slot.label}${isPending ? ' · Pending booking awaiting verification' : isBooked ? ' · Booked' : isPast ? ' · Past' : ''}`); button.disabled = isBooked || isPast;
+          const button = document.createElement('button'); button.type = 'button'; button.className = 'slot'; const isPast = requestedDate === now.dateISO && slot.start < now.minuteOfDay, isBooked = busy.has(slot.start), isPending = pending.has(slot.start) && !isBooked; if (isBooked) { button.classList.add('booked'); button.style.backgroundColor = '#f8652a'; button.style.borderColor = '#f8652a'; button.style.color = '#fff'; button.style.opacity = '1'; } if (isPending) button.classList.add('pending-slot'); button.innerHTML = `<span class="slot-label">${slot.label}${isBooked ? ' · Booked' : isPast ? ' · Past' : ''}</span>${isPending ? '<span class="pending-slot-marker" role="img" aria-label="Pending booking awaiting verification"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M36 12A18 18 0 1 0 41 27" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M31 5h12v12M31 5l12 12M18 17h12M18 31h12M19 17c0 7 10 7 10 14" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><small>Pending review</small></span>' : ''}`; button.setAttribute('aria-label', `${slot.label}${isPending ? ' · Pending booking awaiting verification' : isBooked ? ' · Booked' : isPast ? ' · Past' : ''}`); button.disabled = isBooked || isPast;
           if (button.disabled) selected.delete(slot.start);
           else { openCount++; if (selected.has(slot.start)) button.classList.add('selected'); }
           button.setAttribute('aria-pressed', selected.has(slot.start) ? 'true' : 'false'); if (selected.has(slot.start)) { button.style.backgroundColor = '#dff3e8'; button.style.borderColor = '#078e8d'; button.style.color = '#075b59'; button.style.boxShadow = '0 0 0 2px #078e8d1c'; } button.addEventListener('click', () => { const isSelected = selected.has(slot.start); if (isSelected) selected.delete(slot.start); else selected.set(slot.start, slot.label); button.classList.toggle('selected', !isSelected); button.setAttribute('aria-pressed', !isSelected ? 'true' : 'false'); button.style.backgroundColor = !isSelected ? '#dff3e8' : '#fff'; button.style.borderColor = !isSelected ? '#078e8d' : '#e4e9de'; button.style.color = !isSelected ? '#075b59' : '#315547'; button.style.boxShadow = !isSelected ? '0 0 0 2px #078e8d1c' : 'none'; updatePrice(); updatePendingWarning(); }); slotBox.append(button);
         }
         if (!openCount) slotBox.textContent = 'No times left for this date.';
         updatePrice(); updatePendingWarning();
-      } catch (err) { slotBox.textContent = 'Availability could not load. Please refresh and try again.'; showNotice(error, err.message); }
+      } catch (err) {
+        if (!hasExistingSlots) { slotBox.textContent = 'Availability could not load. Please refresh and try again.'; showNotice(error, err.message); }
+      } finally {
+        availabilityLoadInProgress = false;
+        if (availabilityRefreshQueued && modal.classList.contains('open') && $('#bookingSlots')) { availabilityRefreshQueued = false; loadSlots(); }
+        else availabilityRefreshQueued = false;
+      }
     }
     function updatePrice() {
       const chosen = [...selected.entries()].sort((a, b) => a[0] - b[0]);
@@ -287,6 +301,7 @@
       catch (err) { action.dismiss(); showNotice(error, err.message); button.disabled = false; button.textContent = 'Continue to payment →'; if (err.message.includes('just booked') || err.message.includes('already passed')) await loadSlots(); }
     });
     loadSlots(true);
+    bookingAvailabilityPollTimer = window.setInterval(() => { if (modal.classList.contains('open') && $('#bookingSlots')) loadSlots(); }, 10000);
   }
 
   function openTrack() {
