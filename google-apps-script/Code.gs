@@ -110,6 +110,12 @@ function route_(packet) {
     if (method === 'PATCH' && path === '/api/admin/settings') {
       if ('instapayUrl' in body) { if (body.instapayUrl && !/^https:\/\//i.test(body.instapayUrl)) return fail_(400, 'Payment links must use HTTPS.'); settings.instapayUrl = String(body.instapayUrl).slice(0, 500); }
       ['instapayQr', 'heroImage'].forEach(function (key) { if (key in body) settings[key] = validImage_(body[key]) ? body[key] : ''; });
+      if ('heroImages' in body) {
+        if (!Array.isArray(body.heroImages) || body.heroImages.length > 10) return fail_(400, 'Home page supports up to ten photos.');
+        const images = body.heroImages.map(function (image) { return String(image || '').trim(); }).filter(function (image) { return image; });
+        if (images.some(function (image) { return !validImage_(image); })) return fail_(400, 'Home page photos must be PNG, JPEG, GIF, or WebP.');
+        settings.heroImages = images; settings.heroImage = images[0] || '';
+      }
       if ('contactPhones' in body) {
         if (!Array.isArray(body.contactPhones) || body.contactPhones.length > 10) return fail_(400, 'Enter no more than ten phone numbers.');
         const phones = body.contactPhones.map(function (phone) { return String(phone || '').trim().slice(0, 40); }).filter(function (phone) { return phone; });
@@ -221,10 +227,11 @@ function sessionUser_(token) { const email = token && CacheService.getScriptCach
 function spreadsheet_() { if (SHEET_ID.indexOf('PASTE_') === 0) throw new Error('Add your Google Sheet ID in google-apps-script/Code.gs.'); return SpreadsheetApp.openById(SHEET_ID); }
 function sheet_(name, headers) { const ss = spreadsheet_(); let sh = ss.getSheetByName(name); if (!sh) { sh = ss.insertSheet(name); sh.appendRow(headers); } return sh; }
 function defaultSettings_() {
-  return { courts: [], instapayUrl: '', instapayQr: '', heroImage: '', contactPhones: ['0927 535 8196', '0908 907 8224', '0933 536 8205'], contactEmail: 'maryjeandagondon@gmail.com', contactName: 'Sweat Paddle Court', contactAddress: 'San Antonio, Brgy. Linao, Talisay City, Cebu', businessHours: 'Open daily' };
+  return { courts: [], instapayUrl: '', instapayQr: '', heroImage: '', heroImages: [], contactPhones: ['0927 535 8196', '0908 907 8224', '0933 536 8205'], contactEmail: 'maryjeandagondon@gmail.com', contactName: 'Sweat Paddle Court', contactAddress: 'San Antonio, Brgy. Linao, Talisay City, Cebu', businessHours: 'Open daily' };
 }
 function normalizeSettings_(value) {
-  const result = Object.assign(defaultSettings_(), value || {});
+  const source = value || {}, result = Object.assign(defaultSettings_(), source);
+  result.heroImages = Array.isArray(source.heroImages) ? source.heroImages.filter(function (image) { return typeof image === 'string' && image.trim(); }).slice(0, 10) : (result.heroImage ? [result.heroImage] : []);
   result.contactPhones = Array.isArray(result.contactPhones) ? result.contactPhones.filter(function (phone) { return typeof phone === 'string' && phone.trim(); }).slice(0, 10) : defaultSettings_().contactPhones;
   return result;
 }
@@ -244,6 +251,7 @@ function writeSettings_(value) {
     owner[key] = { sheetImageKey: imageKey };
   }
   pack(stored, 'instapayQr'); pack(stored, 'heroImage');
+  (stored.heroImages || []).forEach(function (image, index) { const holder = { image: image }; pack(holder, 'image'); stored.heroImages[index] = holder.image; });
   (stored.courts || []).forEach(function (court) { pack(court, 'image'); });
   rows.unshift([SETTINGS_KEY, JSON.stringify(stored)]);
   const preserved = current.slice(1).filter(function (r) { return r[0] && r[0] !== SETTINGS_KEY && String(r[0]).indexOf('img:') !== 0; });
@@ -253,7 +261,9 @@ function writeSettings_(value) {
 }
 function hydrateImages_(value, chunks) {
   function hydrate(owner, key) { const ref = owner && owner[key]; if (ref && typeof ref === 'object' && ref.sheetImageKey) owner[key] = (chunks[ref.sheetImageKey] || []).join(''); }
-  hydrate(value, 'instapayQr'); hydrate(value, 'heroImage'); (value.courts || []).forEach(function (court) { hydrate(court, 'image'); });
+  hydrate(value, 'instapayQr'); hydrate(value, 'heroImage');
+  (value.heroImages || []).forEach(function (image, index) { const holder = { image: image }; hydrate(holder, 'image'); value.heroImages[index] = holder.image; });
+  (value.courts || []).forEach(function (court) { hydrate(court, 'image'); });
 }
 const BOOKING_HEADERS = ['reference', 'name', 'courtId', 'court', 'dateISO', 'date', 'timesJson', 'minutesJson', 'duration', 'amount', 'status', 'createdAt', 'paidAt'];
 function readBookings_() { const sh = sheet_('Bookings', BOOKING_HEADERS), rows = sh.getDataRange().getValues(), timeZone = sh.getParent().getSpreadsheetTimeZone() || BOOKING_TIME_ZONE; return rows.slice(1).filter(function (r) { return r[0]; }).map(function (r) { const times = JSON.parse(r[6] || '[]'), minutes = JSON.parse(r[7] || '[]'), dateISO = normalizeDateISO_(r[4], timeZone); return { reference: r[0], name: r[1], courtId: r[2], court: r[3], dateISO: dateISO, date: validDate_(dateISO) ? formatDate_(dateISO) : String(r[5] || ''), times: times, time: times.join(', '), minutes: minutes, duration: Number(r[8]), amount: Number(r[9]), status: r[10], createdAt: r[11], paidAt: r[12] || '' }; }); }
