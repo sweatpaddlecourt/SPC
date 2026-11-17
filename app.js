@@ -825,7 +825,7 @@
   async function loadPublicSettings() {
     const retry = $('#retryPublicData'); if (retry) { retry.disabled = true; retry.textContent = 'Connecting…'; }
     try {
-      const data = await api('/api/public', { timeoutMs: 12000 });
+      const data = await api('/api/public', { timeoutMs: 40000 });
       settings = normalizeSettings(data.settings); adminSetupRequired = data.adminSetupRequired; savePublicCache({ ...data, settings }); refreshPublic();
     } catch (error) {
       if (!settings.courts.length) showPublicUnavailable(error);
