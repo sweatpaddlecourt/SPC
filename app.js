@@ -596,7 +596,7 @@
       const hours = courtHours(court); if (court.dayRateStartMinute < hours.opening || court.dayRateStartMinute >= hours.closing || court.nightRateStartMinute <= court.dayRateStartMinute) return showNotice(message, 'Set the day rate at or after opening, and the night rate after the day rate. If the court closes before the night rate starts, only the day rate will apply.');
       const hasPhoto = Boolean(values.get('image')?.name);
       const action = showActionPopup(id ? (hasPhoto ? 'Uploading and saving court…' : 'Saving court…') : (hasPhoto ? 'Uploading and adding court…' : 'Adding court…'), 'Please wait while the court details are saved.');
-      if (id) { courtEditorPanel.hidden = true; saveButton.disabled = true; saveButton.textContent = 'Saving…'; }
+      if (id) { courtEditorPanel.hidden = true; saveButton.disabled = true; }
       try {
         const image = await imageFileData(values.get('image'));
         if (image) court.image = image;
