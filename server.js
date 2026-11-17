@@ -21,7 +21,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS booking_slots_date ON booking_slots(date_iso, start_minute);
 `);
 if (!db.prepare('SELECT value FROM settings WHERE id=1').get()) {
-  db.prepare('INSERT INTO settings(id,value) VALUES(1,?)').run(JSON.stringify({ courts: [], instapayUrl: '', instapayQr: '', heroImage: '', contactPhones: ['0927 535 8196', '0908 907 8224', '0933 536 8205'], contactEmail: 'maryjeandagondon@gmail.com', contactName: 'Sweat Paddle Court', contactAddress: 'San Antonio, Brgy. Linao, Talisay City, Cebu', businessHours: 'Open daily' }));
+  db.prepare('INSERT INTO settings(id,value) VALUES(1,?)').run(JSON.stringify({ courts: [], instapayUrl: '', instapayQr: '', heroImage: '', heroImages: [], contactPhones: ['0927 535 8196', '0908 907 8224', '0933 536 8205'], contactEmail: 'maryjeandagondon@gmail.com', contactName: 'Sweat Paddle Court', contactAddress: 'San Antonio, Brgy. Linao, Talisay City, Cebu', businessHours: 'Open daily' }));
 }
 const statements = {
   settings: db.prepare('SELECT value FROM settings WHERE id=1'),
@@ -46,9 +46,9 @@ const setupToken = process.env.ADMIN_SETUP_TOKEN || randomBytes(32).toString('ba
 if (statements.userCount.get().count === 0) console.log(`One-time initial admin setup token: ${setupToken}`);
 
 function settings() {
-  const defaults = { courts: [], instapayUrl: '', instapayQr: '', heroImage: '', contactPhones: ['0927 535 8196', '0908 907 8224', '0933 536 8205'], contactEmail: 'maryjeandagondon@gmail.com', contactName: 'Sweat Paddle Court', contactAddress: 'San Antonio, Brgy. Linao, Talisay City, Cebu', businessHours: 'Open daily' };
+  const defaults = { courts: [], instapayUrl: '', instapayQr: '', heroImage: '', heroImages: [], contactPhones: ['0927 535 8196', '0908 907 8224', '0933 536 8205'], contactEmail: 'maryjeandagondon@gmail.com', contactName: 'Sweat Paddle Court', contactAddress: 'San Antonio, Brgy. Linao, Talisay City, Cebu', businessHours: 'Open daily' };
   const value = JSON.parse(statements.settings.get().value);
-  return { ...defaults, ...value, contactPhones: Array.isArray(value.contactPhones) ? value.contactPhones.filter(phone => typeof phone === 'string' && phone.trim()).slice(0, 10) : defaults.contactPhones.slice() };
+  return { ...defaults, ...value, heroImages: Array.isArray(value.heroImages) ? value.heroImages.filter(image => typeof image === 'string' && image.trim()).slice(0, 10) : (value.heroImage ? [value.heroImage] : []), contactPhones: Array.isArray(value.contactPhones) ? value.contactPhones.filter(phone => typeof phone === 'string' && phone.trim()).slice(0, 10) : defaults.contactPhones.slice() };
 }
 function send(res, status, data, headers = {}) {
   const body = Buffer.from(JSON.stringify(data));
@@ -257,6 +257,12 @@ async function handleApi(req, res, url) {
     const body = await readBody(req), data = settings();
     if ('instapayUrl' in body) { const value = cleanText(body.instapayUrl, 500); if (value && !/^https:\/\//i.test(value)) return fail(res, 400, 'Payment links must use HTTPS.'); data.instapayUrl = value; }
     for (const key of ['instapayQr', 'heroImage']) if (key in body) { const image = cleanText(body[key], 5_000_000); if (image && !/^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i.test(image)) return fail(res, 400, 'Image must be PNG, JPEG, GIF, or WebP.'); data[key] = image; }
+    if ('heroImages' in body) {
+      if (!Array.isArray(body.heroImages) || body.heroImages.length > 10) return fail(res, 400, 'Home page supports up to ten photos.');
+      const images = body.heroImages.map(image => cleanText(image, 5_000_000)).filter(Boolean);
+      if (images.some(image => !/^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i.test(image))) return fail(res, 400, 'Home page photos must be PNG, JPEG, GIF, or WebP.');
+      data.heroImages = images; data.heroImage = images[0] || '';
+    }
     if ('contactPhones' in body) {
       if (!Array.isArray(body.contactPhones) || body.contactPhones.length > 10) return fail(res, 400, 'Enter no more than ten phone numbers.');
       const phones = body.contactPhones.map(phone => cleanText(phone, 40)).filter(Boolean);
