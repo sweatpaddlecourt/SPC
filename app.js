@@ -73,6 +73,40 @@
   const patch = (path, body) => api(path, { method: 'PATCH', body: JSON.stringify(body) });
   function showError(message) { openModal(`<div class="success"><h2 id="modalTitle">Couldn’t complete that</h2><p>${escapeHtml(message)}</p><button class="pill" data-close-modal>Close</button></div>`); }
   function showNotice(node, message, error = true) { node.textContent = message; node.style.color = error ? '#ba3b20' : '#087c7a'; }
+  function actionLoadingTitle(successText) {
+    const value = String(successText || '').toLowerCase();
+    if (value.includes('photo')) return 'Uploading and saving home page photos…';
+    if (value.includes('phone')) return 'Saving phone numbers…';
+    if (value.includes('email')) return 'Saving email address…';
+    if (value.includes('setting')) return 'Uploading and saving settings…';
+    return 'Saving your changes…';
+  }
+  function showActionPopup(loadingTitle, loadingText) {
+    $('#adminActionPopup')?.remove();
+    const layer = document.createElement('div');
+    layer.className = 'admin-action-backdrop';
+    layer.id = 'adminActionPopup';
+    const startedAt = Date.now();
+    const pause = duration => new Promise(resolve => window.setTimeout(resolve, duration));
+    layer.innerHTML = '<section class="admin-action-dialog" role="status" aria-live="polite"><span class="admin-action-icon is-loading"><span class="admin-action-spinner" aria-hidden="true"></span></span><h2></h2><p></p></section>';
+    layer.querySelector('h2').textContent = loadingTitle;
+    layer.querySelector('p').textContent = loadingText;
+    document.body.append(layer);
+    return {
+      async complete(title, detail) {
+        const minimumLoading = Math.max(0, 350 - (Date.now() - startedAt));
+        if (minimumLoading) await pause(minimumLoading);
+        if (!layer.isConnected) return;
+        const icon = layer.querySelector('.admin-action-icon');
+        icon.classList.remove('is-loading'); icon.classList.add('is-success'); icon.innerHTML = '<span aria-hidden="true">✓</span>';
+        layer.querySelector('h2').textContent = title;
+        layer.querySelector('p').textContent = detail;
+        await pause(900);
+        layer.remove();
+      },
+      dismiss() { layer.remove(); }
+    };
+  }
   function safeImage(value) {
     if (typeof value !== 'string' || value.length > 5_000_000) return '';
     if (/^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i.test(value)) return value;
@@ -175,11 +209,13 @@
     $('#submitPaymentProof')?.addEventListener('click', async () => {
       const message = $('#paymentProofMessage'), paymentReference = $('#paymentReferenceInput').value.trim(), file = $('#paymentReceiptInput').files[0];
       if (!paymentReference && (!file || !file.name)) return showNotice(message, 'Upload a receipt image or enter a payment reference number.');
+      const action = showActionPopup('Uploading payment proof…', 'Sending your payment reference and receipt to the club.');
       try {
         const receiptImage = await imageFileData(file);
         await post('/api/bookings/report', { reference: booking.reference, name: booking.name, paymentReference, receiptImage });
+        await action.complete('Payment proof received', 'The club will verify it before confirming your booking.');
         openModal(`<div class="success"><div class="success-icon">🧾</div><h2 id="modalTitle">Payment proof received</h2><p>Your payment proof was sent to the club. They will verify it before confirming your booking.</p><div class="summary payment-receipt"><div class="payment-reference">${escapeHtml(booking.reference)}</div><b>${escapeHtml(booking.court)}</b><br>${escapeHtml(booking.date)} · ${escapeHtml(booking.time)}<br>Booked by ${escapeHtml(booking.name)}<br><b>Amount: ${money(booking.amount)}</b><p class="payment-help">Payment status: Awaiting club verification</p></div><button class="pill" data-close-modal>Done</button></div>`);
-      } catch (error) { showNotice(message, error.message); }
+      } catch (error) { action.dismiss(); showNotice(message, error.message); }
     });
   }
 
@@ -215,8 +251,9 @@
       const name = $('#bookingName').value.trim(), times = [...selected.keys()].sort((a, b) => a - b).map(formatTime);
       if (name.length < 2 || !times.length) return showNotice(error, 'Enter your name and choose at least one hour.');
       const button = $('#submitBooking'); button.disabled = true; button.textContent = 'Reserving…';
-      try { const data = await post('/api/bookings', { name, courtId, dateISO: date.value, times }); closeModal(); showPayment(data.booking, data.settings); }
-      catch (err) { showNotice(error, err.message); button.disabled = false; button.textContent = 'Continue to payment →'; if (err.message.includes('just booked') || err.message.includes('already passed')) await loadSlots(); }
+      const action = showActionPopup('Saving your booking…', 'Please wait while your booking request is recorded.');
+      try { const data = await post('/api/bookings', { name, courtId, dateISO: date.value, times }); await action.complete('Booking request saved', 'Your payment details are ready.'); closeModal(); showPayment(data.booking, data.settings); }
+      catch (err) { action.dismiss(); showNotice(error, err.message); button.disabled = false; button.textContent = 'Continue to payment →'; if (err.message.includes('just booked') || err.message.includes('already passed')) await loadSlots(); }
     });
     loadSlots(true);
   }
@@ -342,6 +379,7 @@
       if (!button || button.disabled) return false;
       const pageX = window.scrollX, pageY = window.scrollY, modalTop = adminModal?.scrollTop || 0;
       const original = button.innerHTML;
+      const action = showActionPopup(actionLoadingTitle(successText), 'Please wait while the server saves your changes.');
       button.disabled = true; button.setAttribute('aria-busy', 'true');
       button.innerHTML = '<span class="loading-spinner" aria-hidden="true"></span>Saving…';
       adminModal?.classList.add('is-saving');
@@ -349,8 +387,10 @@
       try {
         await save();
         showNotice(message, successText, false);
+        await action.complete(successText.replace(/[.!]$/, ''), 'Your changes were saved successfully.');
         return true;
       } catch (error) {
+        action.dismiss();
         showNotice(message, error.message);
         return false;
       } finally {
@@ -391,10 +431,13 @@
       upload.addEventListener('change', async () => {
         const files = Array.from(upload.files || []);
         if (photos.length + files.length > 10) { showNotice(message, 'Home page supports up to 10 photos.'); upload.value = ''; return; }
+        if (!files.length) return;
+        const action = showActionPopup('Preparing home page photos…', 'Getting your selected photos ready to save.');
         try {
           const selected = await Promise.all(files.map(imageFileData));
           photos.push(...selected.filter(Boolean)); renderPhotos();
-        } catch (error) { showNotice(message, error.message); }
+          await action.complete('Photos ready', 'Save to publish the selected home page photos.');
+        } catch (error) { action.dismiss(); showNotice(message, error.message); }
         upload.value = '';
       });
       $('#saveHomePagePhotos', layer).addEventListener('click', async event => {
@@ -514,6 +557,8 @@
       event.preventDefault(); const message = $('.formMessage', form), values = new FormData(form), id = form.dataset.courtId, saveButton = form.querySelector('button[type="submit"]') || form.querySelector('.pill');
       const court = { name: values.get('name'), location: values.get('location'), openingMinute: timeInputMinute(values.get('openingTime')), closingMinute: timeInputMinute(values.get('closingTime'), true), dayRateStartMinute: timeInputMinute(values.get('dayRateStartTime')), nightRateStartMinute: timeInputMinute(values.get('nightRateStartTime')), dayRate: Number(values.get('dayRate')), nightRate: Number(values.get('nightRate')), displayPrice: Number(values.get('dayRate')), description: values.get('description') };
       const hours = courtHours(court); if (court.dayRateStartMinute < hours.opening || court.nightRateStartMinute <= court.dayRateStartMinute || court.nightRateStartMinute >= hours.closing) return showNotice(message, 'Set the day rate at or after opening, and the night rate after the day rate but before closing.');
+      const hasPhoto = Boolean(values.get('image')?.name);
+      const action = showActionPopup(id ? (hasPhoto ? 'Uploading and saving court…' : 'Saving court…') : (hasPhoto ? 'Uploading and adding court…' : 'Adding court…'), 'Please wait while the court details are saved.');
       if (id) { courtEditorPanel.hidden = true; saveButton.disabled = true; saveButton.textContent = 'Saving…'; }
       try {
         const image = await imageFileData(values.get('image'));
@@ -533,16 +578,23 @@
             if (image) $('.admin-court-image', item).innerHTML = '<img src="' + safeImage(image) + '" alt="' + escapeHtml(saved.name) + ' at Sweat Paddle Court">';
           }
           courtEditorPanel.hidden = true;
+          await action.complete('Court updated', 'Your court changes were saved.');
           return;
         }
         const result = await post('/api/admin/courts', court);
         const refreshed = await api('/api/admin/dashboard'); settings = normalizeSettings(refreshed.settings); refreshPublic(); await renderAdmin();
-      } catch (error) { if (id) { courtEditorPanel.hidden = false; saveButton.disabled = false; saveButton.textContent = 'Save court'; } showNotice(message, error.message); }
+        await action.complete('Court added', 'Your new court is ready on the site.');
+      } catch (error) { action.dismiss(); if (id) { courtEditorPanel.hidden = false; saveButton.disabled = false; saveButton.textContent = 'Save court'; } showNotice(message, error.message); }
     }));
     modalContent.querySelectorAll('[data-delete-court]').forEach(button => button.addEventListener('click', async () => {
       const id = button.dataset.deleteCourt;
-      if (!window.confirm(`Delete ${button.dataset.courtName}? This will remove it from the public court list.`)) return;
-      try { const result = await api(`/api/admin/courts/${encodeURIComponent(id)}`, { method: 'DELETE' }); settings = normalizeSettings(result.settings); refreshPublic(); await renderAdmin(); } catch (error) { showError(error.message); }
+      if (!window.confirm(\`Delete \${button.dataset.courtName}? This will remove it from the public court list.\`)) return;
+      const action = showActionPopup('Deleting court…', 'Removing this court from the public booking page.');
+      try {
+        const result = await api(\`/api/admin/courts/\${encodeURIComponent(id)}\`, { method: 'DELETE' });
+        settings = normalizeSettings(result.settings); refreshPublic(); await renderAdmin();
+        await action.complete('Court deleted', 'The court was removed from the site.');
+      } catch (error) { action.dismiss(); showError(error.message); }
     }));
     $('#saveSettings').addEventListener('click', async event => {
       const message = $('#settingsMessage');
@@ -556,32 +608,38 @@
       });
     });
     $('#saveAccount').addEventListener('click', async () => {
-      const message = $('#passwordMessage');
+      const action = showActionPopup('Updating admin account…', 'Please wait while your account changes are saved.');
       try {
         const result = await patch('/api/admin/password', { email: $('#newAdminEmail').value.trim(), currentPassword: $('#currentAdminPassword').value, newPassword: $('#newAdminPassword').value });
-        adminEmail = result.user.email; showNotice(message, 'Admin account updated.', false); await renderAdmin();
-      } catch (error) { showNotice(message, error.message); }
+        adminEmail = result.user.email; await renderAdmin();
+        showNotice($('#passwordMessage'), 'Admin account updated.', false);
+        await action.complete('Account updated', 'Your admin account changes were saved.');
+      } catch (error) { action.dismiss(); showNotice($('#passwordMessage'), error.message); }
     });
     async function saveBookingStatus(reference, status, tab) {
       const booking = adminDashboardData?.bookings.find(item => item.reference === reference);
       if (!booking) { showNotice($('#bookingAdminNotice'), 'Booking data is unavailable. Reload the admin panel and try again.'); return; }
       const previousStatus = booking.status;
+      const action = showActionPopup(status === 'Paid' ? 'Marking payment as paid…' : 'Cancelling booking…', 'Please wait for the server to confirm this change.');
       booking.status = status;
       await renderAdmin({ useCache: true, activeTab: tab });
       try {
-        const result = await patch(`/api/admin/bookings/${encodeURIComponent(reference)}`, { status });
-        if (result.cancelled) {
-          try { adminDashboardData = await api('/api/admin/dashboard'); }
-          catch (refreshError) { showNotice($('#bookingAdminNotice'), `Saved, but the refreshed data could not load: ${refreshError.message}`); return; }
+        const result = await patch('/api/admin/bookings/' + encodeURIComponent(reference), { status });
+        try {
+          adminDashboardData = await api('/api/admin/dashboard');
           await renderAdmin({ useCache: true, activeTab: tab });
-          if (result.message) showNotice($('#bookingAdminNotice'), result.message, false);
-        } else {
-          try { adminDashboardData = await api('/api/admin/dashboard'); await renderAdmin({ useCache: true, activeTab: tab }); }
-          catch (refreshError) { showNotice($('#bookingAdminNotice'), `Saved successfully. The latest data could not refresh: ${refreshError.message}`); }
+        } catch (refreshError) {
+          showNotice($('#bookingAdminNotice'), 'Saved successfully. The latest data could not refresh: ' + refreshError.message);
+          await action.complete(result.cancelled || status === 'Cancelled' ? 'Booking cancelled' : 'Payment marked paid', 'The server saved the change, but the booking list could not refresh.');
+          return;
         }
+        if (result.message) showNotice($('#bookingAdminNotice'), result.message, false);
+        const wasCancelled = result.cancelled || status === 'Cancelled';
+        await action.complete(wasCancelled ? 'Booking cancelled' : 'Payment marked paid', result.cancelled ? (result.message || 'The booking was cancelled.') : status === 'Cancelled' ? 'The booking was cancelled.' : 'The payment was marked as paid.');
       } catch (error) {
         booking.status = previousStatus;
         await renderAdmin({ useCache: true, activeTab: /^cancel/i.test(previousStatus || '') ? 'cancelled' : previousStatus === 'Paid' ? 'paid' : 'pending' });
+        action.dismiss();
         showNotice($('#bookingAdminNotice'), error.message);
       }
     }
@@ -592,13 +650,16 @@
       if (!booking || !/^cancel/i.test(booking.status || '')) return;
       if (!window.confirm('Delete this cancelled booking and its payment proof? This cannot be undone.')) return;
       button.disabled = true;
+      const action = showActionPopup('Deleting cancelled booking…', 'Removing the booking and its stored payment proof.');
       try {
-        await api(`/api/admin/bookings/${encodeURIComponent(reference)}`, { method: 'DELETE' });
+        await api('/api/admin/bookings/' + encodeURIComponent(reference), { method: 'DELETE' });
         adminDashboardData = await api('/api/admin/dashboard');
         await renderAdmin({ useCache: true, activeTab: 'cancelled' });
         showNotice($('#bookingAdminNotice'), 'Cancelled booking and payment proof deleted.', false);
+        await action.complete('Booking deleted', 'The cancelled booking and its payment proof were removed.');
       } catch (error) {
-        button.disabled = false;
+        action.dismiss();
+        if (button.isConnected) button.disabled = false;
         showNotice($('#bookingAdminNotice'), error.message);
       }
     }));
