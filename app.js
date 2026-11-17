@@ -34,7 +34,12 @@
   function closeModal() { modal.classList.remove('open'); }
   $('#close').addEventListener('click', closeModal);
   modal.addEventListener('click', event => { if (event.target === modal || event.target.closest('[data-close-modal]')) closeModal(); });
-  document.addEventListener('keydown', event => { if (event.key === 'Escape') closeModal(); });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    const receiptClose = $('#adminReceiptPreview [data-receipt-close]');
+    if (receiptClose) { receiptClose.click(); event.preventDefault(); return; }
+    closeModal();
+  });
 
   async function api(path, options = {}) {
     const endpoint = window.BOOKING_API_URL || '';
@@ -560,7 +565,77 @@
     }
     modalContent.querySelectorAll('[data-paid]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.paid, 'Paid', 'paid')));
     modalContent.querySelectorAll('[data-cancel-booking]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.cancelBooking, 'Cancelled', 'cancelled')));
-    modalContent.querySelectorAll('[data-payment-proof]').forEach(button => button.addEventListener('click', async () => { try { const proof = await post('/api/admin/bookings/proof', { reference: button.dataset.paymentProof }); const proofImage = safeImage(proof.receiptImage); openModal(`<h2 id="modalTitle">Payment proof</h2><p>Booking ${escapeHtml(button.dataset.paymentProof)}</p>${proof.paymentReference ? `<div class="payment-reference">Payment reference: ${escapeHtml(proof.paymentReference)}</div>` : ''}${proofImage ? `<img class="admin-proof-image" src="${proofImage}" alt="Customer payment receipt"><a class="payment-qr-download" href="${proofImage}" download="payment-receipt-${encodeURIComponent(button.dataset.paymentProof)}">Download receipt image</a>` : '<p>No receipt image was uploaded.</p>'}<button class="pill" data-close-modal>Close</button>`, true); } catch (error) { showError(error.message); } }));
+    modalContent.querySelectorAll('[data-payment-proof]').forEach(button => button.addEventListener('click', async () => {
+      $('#adminReceiptPreview')?.remove();
+      const reference = button.dataset.paymentProof;
+      const layer = document.createElement('div');
+      layer.className = 'admin-receipt-backdrop';
+      layer.id = 'adminReceiptPreview';
+      layer.innerHTML = '<section class="admin-receipt-dialog" role="dialog" aria-modal="true" aria-labelledby="adminReceiptTitle"><header><h2 id="adminReceiptTitle">Payment proof</h2><button type="button" class="contact-popup-close" data-receipt-close aria-label="Close receipt preview">×</button></header><div class="admin-receipt-loading" role="status"><span class="admin-receipt-spinner" aria-hidden="true"></span><strong>Loading receipt…</strong><span>Please wait while the receipt image is retrieved.</span></div><div class="admin-receipt-content"></div></section>';
+      modal.append(layer);
+      const closePreview = () => { layer.remove(); if (button.isConnected) button.focus(); };
+      layer.addEventListener('click', event => {
+        if (event.target === layer || event.target.closest('[data-receipt-close]')) closePreview();
+      });
+      const loading = $('.admin-receipt-loading', layer), content = $('.admin-receipt-content', layer);
+      const referenceLabel = document.createElement('p');
+      referenceLabel.textContent = 'Booking ' + reference;
+      content.append(referenceLabel);
+      const requestedButton = button;
+      requestedButton.setAttribute('aria-busy', 'true');
+      try {
+        const proof = await post('/api/admin/bookings/proof', { reference });
+        if (!layer.isConnected) return;
+        const proofImage = safeImage(proof.receiptImage);
+        if (proof.paymentReference) {
+          const paymentReference = document.createElement('div');
+          paymentReference.className = 'payment-reference';
+          paymentReference.textContent = 'Payment reference: ' + proof.paymentReference;
+          content.append(paymentReference);
+        }
+        if (proofImage) {
+          const image = document.createElement('img');
+          image.className = 'admin-proof-image';
+          image.alt = 'Customer payment receipt';
+          const download = document.createElement('a');
+          download.className = 'payment-qr-download';
+          download.textContent = 'Download receipt image';
+          download.href = proofImage;
+          download.download = 'payment-receipt-' + encodeURIComponent(reference);
+          await new Promise(resolve => {
+            image.addEventListener('load', resolve, { once: true });
+            image.addEventListener('error', resolve, { once: true });
+            image.src = proofImage;
+            if (image.complete) resolve();
+          });
+          if (!layer.isConnected) return;
+          loading.hidden = true;
+          if (image.naturalWidth) content.append(image, download);
+          else {
+            const failedImage = document.createElement('p');
+            failedImage.className = 'payment-help';
+            failedImage.textContent = 'The receipt image could not be displayed.';
+            content.append(failedImage);
+          }
+        } else {
+          loading.hidden = true;
+          const noImage = document.createElement('p');
+          noImage.textContent = 'No receipt image was uploaded.';
+          content.append(noImage);
+        }
+      } catch (error) {
+        if (!layer.isConnected) return;
+        loading.hidden = true;
+        const failure = document.createElement('p');
+        failure.className = 'payment-help';
+        failure.setAttribute('role', 'alert');
+        failure.textContent = 'Could not load the payment proof. ' + error.message;
+        content.append(failure);
+      } finally {
+        requestedButton.removeAttribute('aria-busy');
+      }
+      $('[data-receipt-close]', layer)?.focus();
+    }));
     modalContent.querySelectorAll('[data-receipt]').forEach(button => button.addEventListener('click', () => printReceipt(data.bookings.find(item => item.reference === button.dataset.receipt))));
   }
   function printReceipt(booking) {
