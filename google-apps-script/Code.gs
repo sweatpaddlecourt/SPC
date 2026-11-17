@@ -111,7 +111,7 @@ function route_(packet) {
       if ('instapayUrl' in body) { if (body.instapayUrl && !/^https:\/\//i.test(body.instapayUrl)) return fail_(400, 'Payment links must use HTTPS.'); settings.instapayUrl = String(body.instapayUrl).slice(0, 500); }
       ['instapayQr', 'heroImage'].forEach(function (key) { if (key in body) settings[key] = validImage_(body[key]) ? body[key] : ''; });
       if ('contactPhones' in body) {
-        if (!Array.isArray(body.contactPhones) || body.contactPhones.length > 3) return fail_(400, 'Enter no more than three phone numbers.');
+        if (!Array.isArray(body.contactPhones) || body.contactPhones.length > 10) return fail_(400, 'Enter no more than ten phone numbers.');
         const phones = body.contactPhones.map(function (phone) { return String(phone || '').trim().slice(0, 40); }).filter(function (phone) { return phone; });
         if (phones.some(function (phone) { return !/^\+?[0-9]{7,15}$/.test(phone.replace(/[\s()-]/g, '')); })) return fail_(400, 'Enter valid phone numbers.');
         settings.contactPhones = phones;
@@ -225,7 +225,7 @@ function defaultSettings_() {
 }
 function normalizeSettings_(value) {
   const result = Object.assign(defaultSettings_(), value || {});
-  result.contactPhones = Array.isArray(result.contactPhones) ? result.contactPhones.filter(function (phone) { return typeof phone === 'string' && phone.trim(); }).slice(0, 3) : defaultSettings_().contactPhones;
+  result.contactPhones = Array.isArray(result.contactPhones) ? result.contactPhones.filter(function (phone) { return typeof phone === 'string' && phone.trim(); }).slice(0, 10) : defaultSettings_().contactPhones;
   return result;
 }
 function readSettings_() {
