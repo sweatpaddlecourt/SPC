@@ -592,7 +592,7 @@
       const overnight = closingMinute > 1440;
       const rateStart = field => { const minute = timeInputMinute(values.get(field)); return overnight && minute < openingMinute ? minute + 1440 : minute; };
       const court = { name: values.get('name'), location: values.get('location'), openingMinute, closingMinute, dayRateStartMinute: rateStart('dayRateStartTime'), nightRateStartMinute: rateStart('nightRateStartTime'), dayRate: Number(values.get('dayRate')), nightRate: Number(values.get('nightRate')), displayPrice: Number(values.get('dayRate')), description: values.get('description') };
-      const hours = courtHours(court); if (court.dayRateStartMinute < hours.opening || court.dayRateStartMinute >= hours.closing || court.nightRateStartMinute <= court.dayRateStartMinute || court.nightRateStartMinute >= hours.closing) return showNotice(message, 'Set the day rate at or after opening, and the night rate after the day rate but before closing.');
+      const hours = courtHours(court); if (court.dayRateStartMinute < hours.opening || court.dayRateStartMinute >= hours.closing || court.nightRateStartMinute <= court.dayRateStartMinute) return showNotice(message, 'Set the day rate at or after opening, and the night rate after the day rate. If the court closes before the night rate starts, only the day rate will apply.');
       const hasPhoto = Boolean(values.get('image')?.name);
       const action = showActionPopup(id ? (hasPhoto ? 'Uploading and saving court…' : 'Saving court…') : (hasPhoto ? 'Uploading and adding court…' : 'Adding court…'), 'Please wait while the court details are saved.');
       if (id) { courtEditorPanel.hidden = true; saveButton.disabled = true; saveButton.textContent = 'Saving…'; }
