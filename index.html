@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="site-loading">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -167,6 +167,32 @@
     .contact-icon .contact-clock-mark,.contact-icon .contact-email-mark{display:block;width:27px;height:27px}
     .hero-bits b{display:inline-flex;align-items:center;justify-content:center;color:#078e8d;font-size:16px}
     .hero-clover-mark{display:block;width:17px;height:17px;fill:currentColor}
+  
+    html.site-loading,html.site-loading body{overflow:hidden!important;overscroll-behavior:none}
+    .homepage-settings-launcher{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 14px}
+    .homepage-settings-launcher h3{margin:0 0 5px}
+    .homepage-settings-launcher p{color:#718177;font-size:13px;line-height:1.5;margin:0}
+    .homepage-settings-launcher .pill{width:auto;min-width:190px;margin:0}
+    .homepage-settings-backdrop{position:fixed;inset:0;z-index:42;display:grid;place-items:center;padding:16px;background:#153a31a8}
+    .homepage-settings-dialog{width:min(720px,100%);max-height:min(88dvh,760px);overflow:auto;overscroll-behavior:contain;background:#fff;border:1px solid #e2e9dd;border-radius:20px;padding:22px;box-shadow:0 20px 70px #10292055}
+    .homepage-settings-dialog header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}
+    .homepage-settings-dialog h3{font:800 21px Manrope,sans-serif;letter-spacing:-.4px;margin:0 0 6px;color:var(--ink)}
+    .homepage-settings-dialog p{color:#77877d;font-size:13px;line-height:1.55;margin:0 0 14px}
+    .homepage-photo-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(135px,1fr));gap:12px}
+    .homepage-photo-card{position:relative;min-width:0;aspect-ratio:1.18/1;overflow:hidden;border:1px solid #dbe7dc;border-radius:15px;background:#e8eee4;isolation:isolate}
+    .homepage-photo-card img{display:block;width:100%;height:100%;object-fit:cover}
+    .homepage-photo-actions{position:absolute;inset:auto 0 0;display:flex;padding:34px 10px 10px;background:linear-gradient(180deg,transparent,#102d28e8);opacity:0;visibility:hidden;transform:translateY(5px);transition:opacity .18s ease,transform .18s ease,visibility .18s ease}
+    .homepage-photo-card:hover .homepage-photo-actions,.homepage-photo-card:focus-within .homepage-photo-actions{opacity:1;visibility:visible;transform:none}
+    .homepage-photo-remove{width:100%;min-height:36px;border:1px solid #ffd2c6;border-radius:8px;background:#fff0e9ed;color:#a84029;font:700 12px 'DM Sans',sans-serif}
+    .homepage-photo-add{min-width:0;aspect-ratio:1.18/1;border:1.5px dashed #078e8d88;border-radius:15px;background:#f3faf5;color:#078e8d;display:grid;align-content:center;justify-items:center;gap:8px;transition:transform .18s ease,background .18s ease}
+    .homepage-photo-add:hover{transform:translateY(-2px);background:#e8f5ee}
+    .homepage-photo-add:disabled{opacity:.45;cursor:not-allowed;transform:none}
+    .homepage-photo-add svg{display:block;width:min(65%,82px);height:auto}
+    .homepage-photo-add span{font-size:12px;font-weight:800}
+    .homepage-settings-dialog .contact-popup-actions{margin-top:14px}
+    .homepage-settings-dialog .payment-help{min-height:18px;margin:10px 0}
+    @media(max-width:520px){.homepage-settings-launcher{align-items:stretch;flex-direction:column}.homepage-settings-launcher .pill{width:100%}.homepage-settings-backdrop{padding:10px}.homepage-settings-dialog{padding:18px;border-radius:17px;max-height:92dvh}.homepage-photo-gallery{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(hover:none){.homepage-photo-actions{opacity:1;visibility:visible;transform:none}}
   </style>
 </head>
 <body>
@@ -196,6 +222,6 @@
     </section>  </main><footer><div class="wrap footer-copyright">© 2026 Sweat Paddle Court - Cebu. All rights reserved.</div></footer>
   <div class="modal-backdrop" id="modal"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><button class="close" id="close">×</button><div id="modalContent"></div></div></div>
   <script src="api-config.js" defer></script>
-  <script src="app.js?v=refresh-top-icons-20261117-3" defer></script>
+  <script src="app.js?v=homepage-gallery-loader-lock-20261117-1" defer></script>
 </body>
 </html>
