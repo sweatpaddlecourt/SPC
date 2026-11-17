@@ -147,13 +147,13 @@
   function safePaymentLink(value) { try { const url = new URL(value); return url.protocol === 'https:' ? url.href : ''; } catch { return ''; } }
   function money(value) { return `₱${Number(value || 0).toLocaleString('en-PH')}`; }
   function formatTime(minute) {
-    const hour24 = Math.floor(minute / 60), hour = hour24 % 12 || 12;
-    return `${hour}:${String(minute % 60).padStart(2, '0')} ${hour24 >= 12 ? 'PM' : 'AM'}`;
+    const minuteOfDay = ((minute % 1440) + 1440) % 1440, hour24 = Math.floor(minuteOfDay / 60), hour = hour24 % 12 || 12;
+    return `${hour}:${String(minuteOfDay % 60).padStart(2, '0')} ${hour24 >= 12 ? 'PM' : 'AM'}`;
   }
   function courtHours(court) { const opening = Number.isInteger(Number(court.openingMinute)) ? Number(court.openingMinute) : 300; return { opening: opening, closing: Number.isInteger(Number(court.closingMinute)) ? Number(court.closingMinute) : 1320, dayRateStart: Number.isInteger(Number(court.dayRateStartMinute)) ? Number(court.dayRateStartMinute) : opening, nightRateStart: Number.isInteger(Number(court.nightRateStartMinute)) ? Number(court.nightRateStartMinute) : (Number.isInteger(Number(court.priceChangeMinute)) ? Number(court.priceChangeMinute) : 1020) }; }
   function timeChoicesFor(court) { const hours = courtHours(court), choices = []; for (let start = hours.opening; start + 60 <= hours.closing; start += 60) choices.push({ start, label: formatTime(start) + '–' + formatTime(start + 60) }); return choices; }
   function rateFor(court, minute) { const h = courtHours(court); return Number(minute >= h.dayRateStart && minute < h.nightRateStart ? court.dayRate : court.nightRate); }
-  function timeInputValue(minute) { if (minute === 1440) minute = 0; return String(Math.floor(minute / 60)).padStart(2, '0') + ':' + String(minute % 60).padStart(2, '0'); }
+  function timeInputValue(minute) { minute = ((minute % 1440) + 1440) % 1440; return String(Math.floor(minute / 60)).padStart(2, '0') + ':' + String(minute % 60).padStart(2, '0'); }
   function timeInputMinute(value, closing) { if (closing && value === '00:00') return 1440; const parts = value.split(':').map(Number); return parts[0] * 60 + parts[1]; }
   function pricingRows(court) { const h = courtHours(court), rows = []; if (h.dayRateStart > h.opening) rows.push(formatTime(h.opening) + ' - ' + formatTime(h.dayRateStart) + ': <strong>' + money(court.nightRate) + '/hr</strong>'); if (Math.min(h.nightRateStart, h.closing) > h.dayRateStart) rows.push(formatTime(h.dayRateStart) + ' - ' + formatTime(Math.min(h.nightRateStart, h.closing)) + ': <strong>' + money(court.dayRate) + '/hr</strong>'); if (h.closing > h.nightRateStart) rows.push(formatTime(h.nightRateStart) + ' - ' + formatTime(h.closing) + ': <strong>' + money(court.nightRate) + '/hr</strong>'); return rows.map(row => '<div>' + row + '</div>').join(''); }
 
@@ -586,8 +586,13 @@
     }));
     modalContent.querySelectorAll('.courtForm').forEach(form => form.addEventListener('submit', async event => {
       event.preventDefault(); const message = $('.formMessage', form), values = new FormData(form), id = form.dataset.courtId, saveButton = form.querySelector('button[type="submit"]') || form.querySelector('.pill');
-      const court = { name: values.get('name'), location: values.get('location'), openingMinute: timeInputMinute(values.get('openingTime')), closingMinute: timeInputMinute(values.get('closingTime'), true), dayRateStartMinute: timeInputMinute(values.get('dayRateStartTime')), nightRateStartMinute: timeInputMinute(values.get('nightRateStartTime')), dayRate: Number(values.get('dayRate')), nightRate: Number(values.get('nightRate')), displayPrice: Number(values.get('dayRate')), description: values.get('description') };
-      const hours = courtHours(court); if (court.dayRateStartMinute < hours.opening || court.nightRateStartMinute <= court.dayRateStartMinute || court.nightRateStartMinute >= hours.closing) return showNotice(message, 'Set the day rate at or after opening, and the night rate after the day rate but before closing.');
+      const openingMinute = timeInputMinute(values.get('openingTime'));
+      let closingMinute = timeInputMinute(values.get('closingTime'), true);
+      if (closingMinute <= openingMinute) closingMinute += 1440;
+      const overnight = closingMinute > 1440;
+      const rateStart = field => { const minute = timeInputMinute(values.get(field)); return overnight && minute < openingMinute ? minute + 1440 : minute; };
+      const court = { name: values.get('name'), location: values.get('location'), openingMinute, closingMinute, dayRateStartMinute: rateStart('dayRateStartTime'), nightRateStartMinute: rateStart('nightRateStartTime'), dayRate: Number(values.get('dayRate')), nightRate: Number(values.get('nightRate')), displayPrice: Number(values.get('dayRate')), description: values.get('description') };
+      const hours = courtHours(court); if (court.dayRateStartMinute < hours.opening || court.dayRateStartMinute >= hours.closing || court.nightRateStartMinute <= court.dayRateStartMinute || court.nightRateStartMinute >= hours.closing) return showNotice(message, 'Set the day rate at or after opening, and the night rate after the day rate but before closing.');
       const hasPhoto = Boolean(values.get('image')?.name);
       const action = showActionPopup(id ? (hasPhoto ? 'Uploading and saving court…' : 'Saving court…') : (hasPhoto ? 'Uploading and adding court…' : 'Adding court…'), 'Please wait while the court details are saved.');
       if (id) { courtEditorPanel.hidden = true; saveButton.disabled = true; saveButton.textContent = 'Saving…'; }
