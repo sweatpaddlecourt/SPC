@@ -244,9 +244,9 @@
       const action = showActionPopup('Uploading payment proof…', 'Sending your payment reference and receipt to the club.');
       try {
         const receiptImage = await imageFileData(file);
-        await post('/api/bookings/report', { reference: booking.reference, name: booking.name, paymentReference, receiptImage });
-        await action.complete('Payment proof received', 'The club will verify it before confirming your booking.');
-        openModal(`<div class="success"><div class="success-icon">🧾</div><h2 id="modalTitle">Payment proof received</h2><p>Your payment proof was sent to the club. They will verify it before confirming your booking.</p><div class="summary payment-receipt"><div class="payment-reference">${escapeHtml(booking.reference)}</div><b>${escapeHtml(booking.court)}</b><br>${escapeHtml(booking.date)} · ${escapeHtml(booking.time)}<br>Booked by ${escapeHtml(booking.name)}<br><b>Amount: ${money(booking.amount)}</b><p class="payment-help">Payment status: Awaiting club verification</p></div><button class="pill" data-close-modal>Done</button></div>`);
+        await post('/api/bookings/report', { reference: booking.reference, name: booking.name, courtId: booking.courtId, dateISO: booking.dateISO, times: booking.times, paymentReference, receiptImage });
+        await action.complete('Payment proof received', 'Your booking is saved as pending for the club to verify.');
+        openModal(`<div class="success"><div class="success-icon">🧾</div><h2 id="modalTitle">Payment proof received</h2><p>Your payment proof was sent to the club. Your booking is now pending while they verify it.</p><div class="summary payment-receipt"><div class="payment-reference">${escapeHtml(booking.reference)}</div><b>${escapeHtml(booking.court)}</b><br>${escapeHtml(booking.date)} · ${escapeHtml(booking.time)}<br>Booked by ${escapeHtml(booking.name)}<br><b>Amount: ${money(booking.amount)}</b><p class="payment-help">Payment status: Awaiting club verification</p></div><button class="pill" data-close-modal>Done</button></div>`);
       } catch (error) { action.dismiss(); showNotice(message, error.message); }
     });
   }
@@ -295,9 +295,9 @@
     $('#submitBooking').addEventListener('click', async () => {
       const name = $('#bookingName').value.trim(), times = [...selected.keys()].sort((a, b) => a - b).map(formatTime);
       if (name.length < 2 || !times.length) return showNotice(error, 'Enter your name and choose at least one hour.');
-      const button = $('#submitBooking'); button.disabled = true; button.textContent = 'Reserving…';
-      const action = showActionPopup('Saving your booking…', 'Please wait while your booking request is recorded.');
-      try { const data = await post('/api/bookings', { name, courtId, dateISO: date.value, times }); await action.complete('Booking request saved', 'Your payment details are ready.'); closeModal(); showPayment(data.booking, data.settings); }
+      const button = $('#submitBooking'); button.disabled = true; button.textContent = 'Preparing…';
+      const action = showActionPopup('Preparing your payment…', 'Checking your selected times. The booking will be saved after you submit payment proof.');
+      try { const data = await post('/api/bookings', { name, courtId, dateISO: date.value, times }); await action.complete('Payment details ready', 'Your booking will be saved after you submit payment proof.'); closeModal(); showPayment(data.booking, data.settings); }
       catch (err) { action.dismiss(); showNotice(error, err.message); button.disabled = false; button.textContent = 'Continue to payment →'; if (err.message.includes('just booked') || err.message.includes('already passed')) await loadSlots(); }
     });
     loadSlots(true);
