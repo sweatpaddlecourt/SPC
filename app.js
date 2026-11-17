@@ -663,7 +663,7 @@
         showNotice($('#bookingAdminNotice'), error.message);
       }
     }));
-    modalContent.querySelectorAll('[data-paid]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.paid, 'Paid', 'pending')));
+    modalContent.querySelectorAll('[data-paid]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.paid, 'Paid', 'paid')));
     modalContent.querySelectorAll('[data-cancel-booking]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.cancelBooking, 'Cancelled', 'pending')));
     modalContent.querySelectorAll('[data-payment-proof]').forEach(button => button.addEventListener('click', async () => {
       $('#adminReceiptPreview')?.remove();
