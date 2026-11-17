@@ -23,15 +23,17 @@
   let adminEmail = '';
   let adminDashboardData = null;
   let adminBookingSearchQuery = '';
+  let adminBookingsPollTimer = null;
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
   function openModal(html, admin = false) {
+    if (!admin && adminBookingsPollTimer) { window.clearInterval(adminBookingsPollTimer); adminBookingsPollTimer = null; }
     modalContent.innerHTML = html;
     const box = $('.modal', modal);
     box.classList.toggle('admin-modal', admin);
     modal.classList.add('open');
   }
-  function closeModal() { modal.classList.remove('open'); }
+  function closeModal() { modal.classList.remove('open'); if (adminBookingsPollTimer) { window.clearInterval(adminBookingsPollTimer); adminBookingsPollTimer = null; } }
   $('#close').addEventListener('click', closeModal);
   modal.addEventListener('click', event => { if (event.target === modal || event.target.closest('[data-close-modal]')) closeModal(); });
   document.addEventListener('keydown', event => {
@@ -280,28 +282,46 @@
     return '<div class="admin-court-item" data-court-id="' + escapeHtml(court.id) + '"><article class="admin-court-card"><div class="admin-court-image">' + (photo ? '<img src="' + photo + '" alt="' + escapeHtml(court.name) + ' at Sweat Paddle Court" loading="lazy" decoding="async">' : '<div class="admin-court-placeholder" aria-hidden="true"><span>YOUR NEXT RALLY</span><small>SWEAT PADDLE COURT</small></div>') + '</div><div class="admin-court-overlay"><div class="admin-court-title"><strong>' + escapeHtml(court.name) + '</strong><span>' + escapeHtml(court.location || 'Sweat Paddle Court') + '</span></div><div class="admin-court-actions"><button type="button" data-edit-court aria-label="Edit ' + escapeHtml(court.name) + '">Edit</button><button type="button" class="delete" data-delete-court="' + escapeHtml(court.id) + '" data-court-name="' + escapeHtml(court.name) + '" aria-label="Delete ' + escapeHtml(court.name) + '">Delete</button></div></div></article><div class="admin-court-editor" hidden>' + courtForm(court) + '</div></div>';
   }
   async function renderAdmin(options = {}) {
+    if (adminBookingsPollTimer) { window.clearInterval(adminBookingsPollTimer); adminBookingsPollTimer = null; }
     const activeTab = options.activeTab || modalContent.querySelector('[data-booking-tab].active')?.dataset.bookingTab || 'pending';
     const data = options.useCache && adminDashboardData ? adminDashboardData : await api('/api/admin/dashboard');
     adminDashboardData = data; settings = normalizeSettings(data.settings); adminEmail = data.user.email;
     const courtItems = settings.courts.map(adminCourtItem).join('');
-    const adminBookings = data.bookings.filter(booking => /^cancel/i.test(booking.status || '') || booking.paymentReference || booking.hasReceipt);
-    const pendingBookings = adminBookings.filter(booking => !/^cancel/i.test(booking.status || '') && booking.status !== 'Paid');
-    const paidBookings = adminBookings.filter(booking => booking.status === 'Paid');
-    const cancelledBookings = adminBookings.filter(booking => /^cancel/i.test(booking.status || ''));
+    let adminBookings = Array.isArray(data.bookings) ? data.bookings : [];
+    let pendingBookings = adminBookings.filter(booking => !/^cancel/i.test(booking.status || '') && booking.status !== 'Paid');
+    let paidBookings = adminBookings.filter(booking => booking.status === 'Paid');
+    let cancelledBookings = adminBookings.filter(booking => /^cancel/i.test(booking.status || ''));
     function bookingTable(bookings) {
       const query = adminBookingSearchQuery.trim().toLocaleLowerCase();
       const visibleBookings = query ? bookings.filter(booking => [booking.name, booking.reference].some(value => String(value || '').toLocaleLowerCase().includes(query))) : bookings;
       if (!visibleBookings.length) return '<div class="empty-state">' + (query ? 'No bookings match “' + escapeHtml(adminBookingSearchQuery.trim()) + '”.' : 'No bookings in this section.') + '</div>';
       return `<div style="overflow:auto"><table class="admin-bookings"><thead><tr><th>Ref / Client</th><th>Session</th><th>Amount</th><th>Status</th><th>Payment proof</th><th>Actions</th></tr></thead><tbody>${visibleBookings.map(booking => `<tr><td><strong class="admin-booking-client">${escapeHtml(booking.name)}</strong><span class="admin-booking-reference">${escapeHtml(booking.reference)}</span></td><td>${escapeHtml(booking.date)}<br>${escapeHtml(booking.time)} · ${escapeHtml(booking.court)}</td><td>${money(booking.amount)}</td><td><span class="status ${booking.status === 'Paid' ? 'paid' : ''}">${escapeHtml(booking.status)}</span></td><td>${booking.paymentReference ? `<b>Ref: ${escapeHtml(booking.paymentReference)}</b>` : ''}${booking.hasReceipt ? `${booking.paymentReference ? '<br>' : ''}<button data-payment-proof="${escapeHtml(booking.reference)}">View receipt image</button>` : (!booking.paymentReference ? 'No proof submitted' : '')}</td><td>${booking.status === 'Paid' || /^cancel/i.test(booking.status || '') ? '' : `<button data-paid="${escapeHtml(booking.reference)}">${booking.hasReceipt || booking.paymentReference ? 'Mark paid' : 'Cancel · no proof'}</button>`}${!/^cancel/i.test(booking.status || '') ? `<button data-cancel-booking="${escapeHtml(booking.reference)}">Cancel</button>` : ''}${booking.status === 'Paid' ? `<button data-receipt="${escapeHtml(booking.reference)}">Receipt</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`;
     }
-    const bookingSectionData = [
+    let bookingSectionData = [
       ['pending', 'Pending', pendingBookings],
       ['paid', 'Paid', paidBookings],
       ['cancelled', 'Cancelled', cancelledBookings]
     ];
     const bookingTabs = bookingSectionData.map(([id, label, bookings]) => { const active = id === activeTab; return `<button type="button" class="admin-booking-tab${active ? ' active' : ''}" data-booking-tab="${id}" aria-pressed="${active}">${label}<span>${bookings.length}</span></button>`; }).join('');
     const bookingSections = bookingSectionData.map(([id, label, bookings]) => `<section class="admin-booking-section" data-booking-section="${id}"${id === activeTab ? '' : ' hidden'}><h4>${label} (${bookings.length})</h4>${bookingTable(bookings)}</section>`).join('');
-    openModal(`<h2 id="modalTitle">Admin dashboard</h2><p>Signed in as <b>${escapeHtml(adminEmail)}</b> · <button id="adminLogout" type="button">Sign out</button></p><div class="admin-box homepage-settings-launcher"><div><h3>Home page</h3><p>Manage the photos shown on the home page.</p></div><button class="pill" id="homePageSettings" type="button">Home Page Photos</button></div><div class="admin-box court-manager"><div class="admin-court-head"><h3>Courts</h3></div><div id="addCourtPanel" hidden>${courtForm()}</div><div id="courtEditorPanel" class="court-editor-top" hidden></div><div class="admin-court-grid">${courtItems || '<div class="empty-state">No courts yet.</div>'}<button class="admin-add-court" id="addCourtToggle" type="button" aria-label="Add a court" aria-expanded="false"><svg class="admin-add-court-icon" viewBox="0 0 320 320" role="img" aria-label="Add a court"><circle cx="160" cy="160" r="150" fill="#009499"/><path d="M160 82v156M82 160h156" fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round"/></svg></button></div></div><div class="admin-grid"><div class="admin-box"><h3>Payment settings</h3><label for="adminPayLink">HTTPS payment link</label><input id="adminPayLink" type="url" placeholder="https://…" value="${escapeHtml(settings.instapayUrl || '')}"><label for="adminQr">InstaPay QR (PNG, JPEG or WebP; 3 MB max)</label><input id="adminQr" type="file" accept="image/png,image/jpeg,image/webp"><div id="settingsMessage" class="payment-help" role="status"></div><button class="pill" id="saveSettings">Save settings</button></div><div class="admin-box"><h3>Change admin account</h3><label for="newAdminEmail">Email</label><input id="newAdminEmail" type="email" maxlength="254" value="${escapeHtml(adminEmail)}"><label for="currentAdminPassword">Current password</label><div class="password-control"><input id="currentAdminPassword" type="password" autocomplete="current-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><label for="newAdminPassword">New password (leave empty to keep it)</label><div class="password-control"><input id="newAdminPassword" type="password" minlength="12" maxlength="200" autocomplete="new-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><div id="passwordMessage" class="payment-help" role="status"></div><button class="pill" id="saveAccount">Update account</button></div></div><div class="admin-box"><h3>Bookings (${adminBookings.length})</h3><div id="bookingAdminNotice" class="payment-help" role="status"></div><label class="admin-booking-search">Search bookings<input id="bookingNameSearch" type="search" maxlength="100" autocomplete="off" placeholder="Search by customer name" aria-label="Search bookings by customer name or reference" value="${escapeHtml(adminBookingSearchQuery)}"></label><div class="admin-booking-tabs" role="group" aria-label="Filter bookings by status">${bookingTabs}</div>${bookingSections}</div><div class="admin-box contact-settings-manager"><h3>Contact information</h3><p>Update the phone numbers and email address customers use to reach the club.</p><div class="contact-settings-actions"><button class="pill" id="phoneSettings" type="button">Phone numbers settings</button><button class="pill" id="emailSettings" type="button">Email address settings</button></div></div>`, true);
+    function applyLiveBookings(bookings) {
+      adminBookings = Array.isArray(bookings) ? bookings : [];
+      pendingBookings = adminBookings.filter(booking => !/^cancel/i.test(booking.status || '') && booking.status !== 'Paid');
+      paidBookings = adminBookings.filter(booking => booking.status === 'Paid');
+      cancelledBookings = adminBookings.filter(booking => /^cancel/i.test(booking.status || ''));
+      bookingSectionData = [['pending', 'Pending', pendingBookings], ['paid', 'Paid', paidBookings], ['cancelled', 'Cancelled', cancelledBookings]];
+      const heading = $('#adminBookingsHeading');
+      if (heading) heading.textContent = 'Bookings (' + adminBookings.length + ')';
+      bookingSectionData.forEach(([id, label, items]) => {
+        const tab = modalContent.querySelector('[data-booking-tab="' + id + '"]');
+        const count = tab && tab.querySelector('span');
+        if (count) count.textContent = String(items.length);
+        const section = modalContent.querySelector('[data-booking-section="' + id + '"]');
+        if (section) section.innerHTML = '<h4>' + label + ' (' + items.length + ')</h4>' + bookingTable(items);
+      });
+      bindBookingActions();
+    }
+    openModal(`<h2 id="modalTitle">Admin dashboard</h2><p>Signed in as <b>${escapeHtml(adminEmail)}</b> · <button id="adminLogout" type="button">Sign out</button></p><div class="admin-box homepage-settings-launcher"><div><h3>Home page</h3><p>Manage the photos shown on the home page.</p></div><button class="pill" id="homePageSettings" type="button">Home Page Photos</button></div><div class="admin-box court-manager"><div class="admin-court-head"><h3>Courts</h3></div><div id="addCourtPanel" hidden>${courtForm()}</div><div id="courtEditorPanel" class="court-editor-top" hidden></div><div class="admin-court-grid">${courtItems || '<div class="empty-state">No courts yet.</div>'}<button class="admin-add-court" id="addCourtToggle" type="button" aria-label="Add a court" aria-expanded="false"><svg class="admin-add-court-icon" viewBox="0 0 320 320" role="img" aria-label="Add a court"><circle cx="160" cy="160" r="150" fill="#009499"/><path d="M160 82v156M82 160h156" fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round"/></svg></button></div></div><div class="admin-grid"><div class="admin-box"><h3>Payment settings</h3><label for="adminPayLink">HTTPS payment link</label><input id="adminPayLink" type="url" placeholder="https://…" value="${escapeHtml(settings.instapayUrl || '')}"><label for="adminQr">InstaPay QR (PNG, JPEG or WebP; 3 MB max)</label><input id="adminQr" type="file" accept="image/png,image/jpeg,image/webp"><div id="settingsMessage" class="payment-help" role="status"></div><button class="pill" id="saveSettings">Save settings</button></div><div class="admin-box"><h3>Change admin account</h3><label for="newAdminEmail">Email</label><input id="newAdminEmail" type="email" maxlength="254" value="${escapeHtml(adminEmail)}"><label for="currentAdminPassword">Current password</label><div class="password-control"><input id="currentAdminPassword" type="password" autocomplete="current-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><label for="newAdminPassword">New password (leave empty to keep it)</label><div class="password-control"><input id="newAdminPassword" type="password" minlength="12" maxlength="200" autocomplete="new-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><div id="passwordMessage" class="payment-help" role="status"></div><button class="pill" id="saveAccount">Update account</button></div></div><div class="admin-box" id="adminBookingsPanel"><div class="admin-booking-heading"><h3 id="adminBookingsHeading">Bookings (${adminBookings.length})</h3><span class="admin-booking-live" id="adminBookingsLiveStatus" role="status">Live · updates every 10 seconds</span></div><div id="bookingAdminNotice" class="payment-help" role="status"></div><label class="admin-booking-search">Search bookings<input id="bookingNameSearch" type="search" maxlength="100" autocomplete="off" placeholder="Search by customer name" aria-label="Search bookings by customer name or reference" value="${escapeHtml(adminBookingSearchQuery)}"></label><div class="admin-booking-tabs" role="group" aria-label="Filter bookings by status">${bookingTabs}</div>${bookingSections}</div><div class="admin-box contact-settings-manager"><h3>Contact information</h3><p>Update the phone numbers and email address customers use to reach the club.</p><div class="contact-settings-actions"><button class="pill" id="phoneSettings" type="button">Phone numbers settings</button><button class="pill" id="emailSettings" type="button">Email address settings</button></div></div>`, true);
     modalContent.querySelectorAll('[data-booking-tab]').forEach(button => button.addEventListener('click', () => {
       const selectedTab = button.dataset.bookingTab;
       modalContent.querySelectorAll('[data-booking-tab]').forEach(tab => { const active = tab.dataset.bookingTab === selectedTab; tab.classList.toggle('active', active); tab.setAttribute('aria-pressed', String(active)); });
@@ -313,6 +333,7 @@
         const section = modalContent.querySelector('[data-booking-section="' + id + '"]');
         section.innerHTML = '<h4>' + label + ' (' + bookings.length + ')</h4>' + bookingTable(bookings);
       });
+      bindBookingActions();
     });
     bindPasswordToggles(modalContent);
     const adminModal = $('.modal.admin-modal', modal);
@@ -563,6 +584,7 @@
         showNotice($('#bookingAdminNotice'), error.message);
       }
     }
+    function bindBookingActions() {
     modalContent.querySelectorAll('[data-paid]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.paid, 'Paid', 'paid')));
     modalContent.querySelectorAll('[data-cancel-booking]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.cancelBooking, 'Cancelled', 'cancelled')));
     modalContent.querySelectorAll('[data-payment-proof]').forEach(button => button.addEventListener('click', async () => {
@@ -637,6 +659,27 @@
       $('[data-receipt-close]', layer)?.focus();
     }));
     modalContent.querySelectorAll('[data-receipt]').forEach(button => button.addEventListener('click', () => printReceipt(data.bookings.find(item => item.reference === button.dataset.receipt))));
+    }
+    bindBookingActions();
+    let bookingRefreshInProgress = false;
+    async function refreshAdminBookings() {
+      if (bookingRefreshInProgress || !modal.classList.contains('open') || !$('.modal.admin-modal', modal)) return;
+      bookingRefreshInProgress = true;
+      try {
+        const latest = await api('/api/admin/dashboard');
+        if (!modal.classList.contains('open') || !$('.modal.admin-modal', modal)) return;
+        adminDashboardData = Object.assign({}, adminDashboardData || {}, { bookings: latest.bookings || [] });
+        applyLiveBookings(latest.bookings || []);
+        const liveStatus = $('#adminBookingsLiveStatus');
+        if (liveStatus) liveStatus.textContent = 'Live · updates every 10 seconds';
+      } catch (error) {
+        const liveStatus = $('#adminBookingsLiveStatus');
+        if (liveStatus) liveStatus.textContent = 'Live · reconnecting';
+      } finally {
+        bookingRefreshInProgress = false;
+      }
+    }
+    adminBookingsPollTimer = window.setInterval(refreshAdminBookings, 10000);
   }
   function printReceipt(booking) {
     if (!booking) return;
