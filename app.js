@@ -15,7 +15,7 @@
   const DEFAULT_SITE_SETTINGS = { courts: [], instapayUrl: '', instapayQr: '', heroImage: '', contactPhones: ['0927 535 8196', '0908 907 8224', '0933 536 8205'], contactEmail: 'maryjeandagondon@gmail.com', contactName: 'Sweat Paddle Court', contactAddress: 'San Antonio, Brgy. Linao, Talisay City, Cebu', businessHours: 'Open daily' };
   function normalizeSettings(value) {
     const source = value && typeof value === 'object' ? value : {};
-    return { ...DEFAULT_SITE_SETTINGS, ...source, courts: Array.isArray(source.courts) ? source.courts : [], contactPhones: Array.isArray(source.contactPhones) ? source.contactPhones.filter(phone => typeof phone === 'string' && phone.trim()).slice(0, 3) : DEFAULT_SITE_SETTINGS.contactPhones.slice() };
+    return { ...DEFAULT_SITE_SETTINGS, ...source, courts: Array.isArray(source.courts) ? source.courts : [], contactPhones: Array.isArray(source.contactPhones) ? source.contactPhones.filter(phone => typeof phone === 'string' && phone.trim()).slice(0, 10) : DEFAULT_SITE_SETTINGS.contactPhones.slice() };
   }
   let settings = normalizeSettings();
   let adminSetupRequired = true;
@@ -107,7 +107,7 @@
     }));
   }
   function renderContact() {
-    const phones = Array.isArray(settings.contactPhones) ? settings.contactPhones.filter(Boolean).slice(0, 3) : [];
+    const phones = Array.isArray(settings.contactPhones) ? settings.contactPhones.filter(Boolean).slice(0, 10) : [];
     const phoneRow = $('#contactPhoneRow'), phoneList = $('#contactPhones');
     phoneRow.hidden = !phones.length; phoneList.replaceChildren(...phones.map(phone => {
       const link = document.createElement('a'); link.href = `tel:${phone.replace(/[^\d+]/g, '')}`; link.textContent = phone; return link;
@@ -255,7 +255,6 @@
     const data = options.useCache && adminDashboardData ? adminDashboardData : await api('/api/admin/dashboard');
     adminDashboardData = data; settings = normalizeSettings(data.settings); adminEmail = data.user.email;
     const courtItems = settings.courts.map(adminCourtItem).join('');
-    const contactPhoneFields = Array.from({ length: 3 }, (_, index) => `<label for="contactPhone${index + 1}">Phone number ${index + 1}</label><input id="contactPhone${index + 1}" type="tel" maxlength="40" value="${escapeHtml(settings.contactPhones[index] || '')}">`).join('');
     const adminBookings = data.bookings.filter(booking => /^cancel/i.test(booking.status || '') || booking.paymentReference || booking.hasReceipt);
     const pendingBookings = adminBookings.filter(booking => !/^cancel/i.test(booking.status || '') && booking.status !== 'Paid');
     const paidBookings = adminBookings.filter(booking => booking.status === 'Paid');
@@ -271,13 +270,96 @@
     ];
     const bookingTabs = bookingSectionData.map(([id, label, bookings]) => { const active = id === activeTab; return `<button type="button" class="admin-booking-tab${active ? ' active' : ''}" data-booking-tab="${id}" aria-pressed="${active}">${label}<span>${bookings.length}</span></button>`; }).join('');
     const bookingSections = bookingSectionData.map(([id, label, bookings]) => `<section class="admin-booking-section" data-booking-section="${id}"${id === activeTab ? '' : ' hidden'}><h4>${label} (${bookings.length})</h4>${bookingTable(bookings)}</section>`).join('');
-    openModal(`<h2 id="modalTitle">Admin dashboard</h2><p>Signed in as <b>${escapeHtml(adminEmail)}</b> · <button id="adminLogout" type="button">Sign out</button></p><div class="admin-box court-manager"><div class="admin-court-head"><h3>Courts</h3></div><div id="addCourtPanel" hidden>${courtForm()}</div><div id="courtEditorPanel" class="court-editor-top" hidden></div><div class="admin-court-grid">${courtItems || '<div class="empty-state">No courts yet.</div>'}<button class="admin-add-court" id="addCourtToggle" type="button" aria-label="Add a court" aria-expanded="false"><svg class="admin-add-court-icon" viewBox="0 0 320 320" role="img" aria-label="Add a court"><circle cx="160" cy="160" r="150" fill="#009499"/><path d="M160 82v156M82 160h156" fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round"/></svg></button></div></div><div class="admin-grid"><div class="admin-box"><h3>Payment and homepage settings</h3><label for="adminPayLink">HTTPS payment link</label><input id="adminPayLink" type="url" placeholder="https://…" value="${escapeHtml(settings.instapayUrl || '')}"><label for="adminQr">InstaPay QR (PNG, JPEG or WebP; 3 MB max)</label><input id="adminQr" type="file" accept="image/png,image/jpeg,image/webp"><label for="adminHeroImage">Homepage photo (optional)</label><input id="adminHeroImage" type="file" accept="image/png,image/jpeg,image/gif,image/webp"><div id="settingsMessage" class="payment-help" role="status"></div><button class="pill" id="saveSettings">Save settings</button></div><div class="admin-box"><h3>Contact information</h3>${contactPhoneFields}<label for="contactEmailInput">Email address</label><input id="contactEmailInput" type="email" maxlength="254" value="${escapeHtml(settings.contactEmail)}"><label for="contactNameInput">Venue name</label><input id="contactNameInput" type="text" maxlength="120" value="${escapeHtml(settings.contactName)}"><label for="contactAddressInput">Location address</label><textarea id="contactAddressInput" maxlength="300" rows="3">${escapeHtml(settings.contactAddress)}</textarea><label for="businessHoursInput">Hours label</label><input id="businessHoursInput" type="text" maxlength="100" value="${escapeHtml(settings.businessHours)}"><div id="contactSettingsMessage" class="payment-help" role="status"></div><button class="pill" id="saveContactSettings">Save contact information</button></div><div class="admin-box"><h3>Change admin account</h3><label for="newAdminEmail">Email</label><input id="newAdminEmail" type="email" maxlength="254" value="${escapeHtml(adminEmail)}"><label for="currentAdminPassword">Current password</label><div class="password-control"><input id="currentAdminPassword" type="password" autocomplete="current-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><label for="newAdminPassword">New password (leave empty to keep it)</label><div class="password-control"><input id="newAdminPassword" type="password" minlength="12" maxlength="200" autocomplete="new-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><div id="passwordMessage" class="payment-help" role="status"></div><button class="pill" id="saveAccount">Update account</button></div></div><div class="admin-box"><h3>Bookings (${adminBookings.length})</h3><div id="bookingAdminNotice" class="payment-help" role="status"></div><div class="admin-booking-tabs" role="group" aria-label="Filter bookings by status">${bookingTabs}</div>${bookingSections}</div>`, true);
+    openModal(`<h2 id="modalTitle">Admin dashboard</h2><p>Signed in as <b>${escapeHtml(adminEmail)}</b> · <button id="adminLogout" type="button">Sign out</button></p><div class="admin-box court-manager"><div class="admin-court-head"><h3>Courts</h3></div><div id="addCourtPanel" hidden>${courtForm()}</div><div id="courtEditorPanel" class="court-editor-top" hidden></div><div class="admin-court-grid">${courtItems || '<div class="empty-state">No courts yet.</div>'}<button class="admin-add-court" id="addCourtToggle" type="button" aria-label="Add a court" aria-expanded="false"><svg class="admin-add-court-icon" viewBox="0 0 320 320" role="img" aria-label="Add a court"><circle cx="160" cy="160" r="150" fill="#009499"/><path d="M160 82v156M82 160h156" fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round"/></svg></button></div></div><div class="admin-grid"><div class="admin-box"><h3>Payment and homepage settings</h3><label for="adminPayLink">HTTPS payment link</label><input id="adminPayLink" type="url" placeholder="https://…" value="${escapeHtml(settings.instapayUrl || '')}"><label for="adminQr">InstaPay QR (PNG, JPEG or WebP; 3 MB max)</label><input id="adminQr" type="file" accept="image/png,image/jpeg,image/webp"><label for="adminHeroImage">Homepage photo (optional)</label><input id="adminHeroImage" type="file" accept="image/png,image/jpeg,image/gif,image/webp"><div id="settingsMessage" class="payment-help" role="status"></div><button class="pill" id="saveSettings">Save settings</button></div><div class="admin-box"><h3>Change admin account</h3><label for="newAdminEmail">Email</label><input id="newAdminEmail" type="email" maxlength="254" value="${escapeHtml(adminEmail)}"><label for="currentAdminPassword">Current password</label><div class="password-control"><input id="currentAdminPassword" type="password" autocomplete="current-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><label for="newAdminPassword">New password (leave empty to keep it)</label><div class="password-control"><input id="newAdminPassword" type="password" minlength="12" maxlength="200" autocomplete="new-password"><button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Show</button></div><div id="passwordMessage" class="payment-help" role="status"></div><button class="pill" id="saveAccount">Update account</button></div></div><div class="admin-box"><h3>Bookings (${adminBookings.length})</h3><div id="bookingAdminNotice" class="payment-help" role="status"></div><div class="admin-booking-tabs" role="group" aria-label="Filter bookings by status">${bookingTabs}</div>${bookingSections}</div><div class="admin-box contact-settings-manager"><h3>Contact information</h3><p>Update the phone numbers and email address customers use to reach the club.</p><div class="contact-settings-actions"><button class="pill" id="phoneSettings" type="button">Phone numbers settings</button><button class="pill" id="emailSettings" type="button">Email address settings</button></div></div>`, true);
     modalContent.querySelectorAll('[data-booking-tab]').forEach(button => button.addEventListener('click', () => {
       const selectedTab = button.dataset.bookingTab;
       modalContent.querySelectorAll('[data-booking-tab]').forEach(tab => { const active = tab.dataset.bookingTab === selectedTab; tab.classList.toggle('active', active); tab.setAttribute('aria-pressed', String(active)); });
       modalContent.querySelectorAll('[data-booking-section]').forEach(section => { section.hidden = section.dataset.bookingSection !== selectedTab; });
     }));
     bindPasswordToggles(modalContent);
+    const adminModal = $('.modal.admin-modal', modal);
+    async function runAdminSave(button, message, successText, save) {
+      if (!button || button.disabled) return false;
+      const pageX = window.scrollX, pageY = window.scrollY, modalTop = adminModal?.scrollTop || 0;
+      const original = button.innerHTML;
+      button.disabled = true; button.setAttribute('aria-busy', 'true');
+      button.innerHTML = '<span class="loading-spinner" aria-hidden="true"></span>Saving…';
+      adminModal?.classList.add('is-saving');
+      document.documentElement.classList.add('admin-saving');
+      try {
+        await save();
+        showNotice(message, successText, false);
+        return true;
+      } catch (error) {
+        showNotice(message, error.message);
+        return false;
+      } finally {
+        button.innerHTML = original; button.disabled = false; button.removeAttribute('aria-busy');
+        adminModal?.classList.remove('is-saving');
+        document.documentElement.classList.remove('admin-saving');
+        if (adminModal) adminModal.scrollTop = modalTop;
+        window.scrollTo(pageX, pageY);
+      }
+    }
+    function openContactSettings(kind) {
+      $('#contactSettingsPopup')?.remove();
+      const phonesMode = kind === 'phones';
+      const layer = document.createElement('div');
+      layer.className = 'contact-settings-backdrop'; layer.id = 'contactSettingsPopup';
+      layer.innerHTML = phonesMode
+        ? '<section class="contact-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="contactPopupTitle"><header><div><h3 id="contactPopupTitle">Phone numbers</h3><p>Add, edit, or remove the numbers customers can call.</p></div><button type="button" class="contact-popup-close" data-popup-close aria-label="Close">×</button></header><div id="phoneSettingsRows" class="phone-settings-rows"></div><button type="button" class="contact-popup-secondary" id="addPhoneNumber">+ Add phone number</button><p id="contactPopupMessage" class="payment-help" role="status"></p><div class="contact-popup-actions"><button type="button" class="contact-popup-secondary" data-popup-close>Cancel</button><button type="button" class="pill" id="savePhoneNumbers">Save phone numbers</button></div></section>'
+        : '<section class="contact-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="contactPopupTitle"><header><div><h3 id="contactPopupTitle">Email address</h3><p>Update or remove the email address customers use to contact the club.</p></div><button type="button" class="contact-popup-close" data-popup-close aria-label="Close">×</button></header><label for="contactEmailSettingInput">Email address</label><input id="contactEmailSettingInput" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com"><button type="button" class="contact-popup-secondary remove-email" id="removeContactEmail">Remove email address</button><p id="contactPopupMessage" class="payment-help" role="status"></p><div class="contact-popup-actions"><button type="button" class="contact-popup-secondary" data-popup-close>Cancel</button><button type="button" class="pill" id="saveContactEmail">Save email address</button></div></section>';
+      modal.append(layer);
+      layer.addEventListener('click', event => {
+        if (event.target === layer || event.target.closest('[data-popup-close]')) layer.remove();
+      });
+      const message = $('#contactPopupMessage', layer);
+      if (phonesMode) {
+        const list = $('#phoneSettingsRows', layer), add = $('#addPhoneNumber', layer);
+        function currentValues() { return Array.from(list.querySelectorAll('input[data-phone]'), input => input.value); }
+        function renderRows(values) {
+          list.replaceChildren();
+          values.slice(0, 10).forEach((value, index) => {
+            const row = document.createElement('div'); row.className = 'phone-settings-row';
+            const label = document.createElement('label'); label.textContent = 'Phone number ' + (index + 1);
+            const input = document.createElement('input'); input.type = 'tel'; input.inputMode = 'tel'; input.maxLength = 40; input.value = value; input.placeholder = 'e.g. 0927 535 8196'; input.setAttribute('aria-label', 'Phone number ' + (index + 1)); input.dataset.phone = 'true';
+            const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'contact-popup-secondary remove-phone'; remove.textContent = 'Remove'; remove.setAttribute('aria-label', 'Remove phone number ' + (index + 1));
+            remove.addEventListener('click', () => renderRows(currentValues().filter((_, rowIndex) => rowIndex !== index)));
+            row.append(label, input, remove); list.append(row);
+          });
+          add.disabled = values.length >= 10;
+        }
+        renderRows(Array.isArray(settings.contactPhones) ? settings.contactPhones.slice(0, 10) : []);
+        add.addEventListener('click', () => renderRows([...currentValues(), '']));
+        $('#savePhoneNumbers', layer).addEventListener('click', async event => {
+          const phones = currentValues().map(value => value.trim()).filter(Boolean);
+          const invalid = phones.some(phone => !/^\+?[0-9]{7,15}$/.test(phone.replace(/[\s()-]/g, '')));
+          if (invalid) { showNotice(message, 'Enter valid phone numbers or remove the incomplete entry.'); return; }
+          await runAdminSave(event.currentTarget, message, 'Phone numbers saved.', async () => {
+            const result = await patch('/api/admin/settings', { contactPhones: phones });
+            const saved = Array.isArray(result.settings?.contactPhones) ? result.settings.contactPhones : null;
+            if (!saved || saved.join('|') !== phones.join('|')) throw new Error('The contact editor needs the latest Apps Script code. Update Code.gs in Apps Script and redeploy the web app.');
+            settings = normalizeSettings(result.settings); adminDashboardData.settings = settings;
+            savePublicCache({ settings, adminSetupRequired }); refreshPublic();
+          });
+        });
+      } else {
+        const input = $('#contactEmailSettingInput', layer); input.value = String(settings.contactEmail || '');
+        $('#removeContactEmail', layer).addEventListener('click', () => { input.value = ''; input.focus(); });
+        $('#saveContactEmail', layer).addEventListener('click', async event => {
+          const email = input.value.trim();
+          if (email && !input.checkValidity()) { showNotice(message, 'Enter a valid email address or remove it.'); input.focus(); return; }
+          await runAdminSave(event.currentTarget, message, 'Email address saved.', async () => {
+            const result = await patch('/api/admin/settings', { contactEmail: email });
+            if (result.settings?.contactEmail !== email) throw new Error('The contact editor needs the latest Apps Script code. Update Code.gs in Apps Script and redeploy the web app.');
+            settings = normalizeSettings(result.settings); adminDashboardData.settings = settings;
+            savePublicCache({ settings, adminSetupRequired }); refreshPublic();
+          });
+        });
+      }
+    }
+    $('#phoneSettings').addEventListener('click', () => openContactSettings('phones'));
+    $('#emailSettings').addEventListener('click', () => openContactSettings('email'));
     $('#adminLogout').addEventListener('click', async () => { try { await post('/api/admin/logout', {}); } finally { closeModal(); } });
     const addCourtToggle = $('#addCourtToggle'), addCourtPanel = $('#addCourtPanel'), courtEditorPanel = $('#courtEditorPanel');
     function restoreCourtEditor() {
@@ -353,27 +435,16 @@
       if (!window.confirm(`Delete ${button.dataset.courtName}? This will remove it from the public court list.`)) return;
       try { const result = await api(`/api/admin/courts/${encodeURIComponent(id)}`, { method: 'DELETE' }); settings = normalizeSettings(result.settings); refreshPublic(); await renderAdmin(); } catch (error) { showError(error.message); }
     }));
-    $('#saveSettings').addEventListener('click', async () => {
+    $('#saveSettings').addEventListener('click', async event => {
       const message = $('#settingsMessage');
-      try {
+      await runAdminSave(event.currentTarget, message, 'Settings saved.', async () => {
         const body = { instapayUrl: $('#adminPayLink').value.trim() };
         const qr = await imageFileData($('#adminQr').files[0]), hero = await imageFileData($('#adminHeroImage').files[0]);
         if (qr) body.instapayQr = qr; if (hero) body.heroImage = hero;
-        const result = await patch('/api/admin/settings', body); settings = normalizeSettings(result.settings); refreshPublic(); showNotice(message, 'Settings saved.', false);
-      } catch (error) { showNotice(message, error.message); }
-    });
-    $('#saveContactSettings').addEventListener('click', async () => {
-      const message = $('#contactSettingsMessage');
-      try {
-        const body = { contactPhones: [1, 2, 3].map(index => $(`#contactPhone${index}`).value.trim()).filter(Boolean), contactEmail: $('#contactEmailInput').value.trim(), contactName: $('#contactNameInput').value.trim(), contactAddress: $('#contactAddressInput').value.trim(), businessHours: $('#businessHoursInput').value.trim() };
         const result = await patch('/api/admin/settings', body);
-        const savedPhones = Array.isArray(result.settings?.contactPhones) ? result.settings.contactPhones : null;
-        if (!savedPhones || savedPhones.join('|') !== body.contactPhones.join('|') || result.settings.contactEmail !== body.contactEmail || result.settings.contactName !== body.contactName || result.settings.contactAddress !== body.contactAddress || result.settings.businessHours !== body.businessHours) {
-          throw new Error('The contact editor needs the latest Apps Script code. Update Code.gs in Apps Script and redeploy the web app.');
-        }
-        settings = normalizeSettings(result.settings); adminDashboardData.settings = settings; savePublicCache({ settings, adminSetupRequired }); refreshPublic();
-        showNotice(message, 'Contact information saved.', false);
-      } catch (error) { showNotice(message, error.message); }
+        settings = normalizeSettings(result.settings); adminDashboardData.settings = settings;
+        savePublicCache({ settings, adminSetupRequired }); refreshPublic();
+      });
     });
     $('#saveAccount').addEventListener('click', async () => {
       const message = $('#passwordMessage');
