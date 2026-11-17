@@ -110,6 +110,20 @@ function route_(packet) {
     if (method === 'PATCH' && path === '/api/admin/settings') {
       if ('instapayUrl' in body) { if (body.instapayUrl && !/^https:\/\//i.test(body.instapayUrl)) return fail_(400, 'Payment links must use HTTPS.'); settings.instapayUrl = String(body.instapayUrl).slice(0, 500); }
       ['instapayQr', 'heroImage'].forEach(function (key) { if (key in body) settings[key] = validImage_(body[key]) ? body[key] : ''; });
+      if ('contactPhones' in body) {
+        if (!Array.isArray(body.contactPhones) || body.contactPhones.length > 3) return fail_(400, 'Enter no more than three phone numbers.');
+        const phones = body.contactPhones.map(function (phone) { return String(phone || '').trim().slice(0, 40); }).filter(function (phone) { return phone; });
+        if (phones.some(function (phone) { return !/^\+?[0-9]{7,15}$/.test(phone.replace(/[\s()-]/g, '')); })) return fail_(400, 'Enter valid phone numbers.');
+        settings.contactPhones = phones;
+      }
+      if ('contactEmail' in body) {
+        const email = String(body.contactEmail || '').trim().slice(0, 254);
+        if (email && !validEmail_(email)) return fail_(400, 'Enter a valid contact email.');
+        settings.contactEmail = email;
+      }
+      ['contactName', 'contactAddress', 'businessHours'].forEach(function (key) {
+        if (key in body) settings[key] = String(body[key] || '').trim().slice(0, key === 'contactAddress' ? 300 : key === 'contactName' ? 120 : 100);
+      });
       writeSettings_(settings); return ok_({ settings: settings });
     }
     if (method === 'PATCH' && path === '/api/admin/password') {
@@ -206,11 +220,19 @@ function createSession_(email) {
 function sessionUser_(token) { const email = token && CacheService.getScriptCache().get('session:' + token); return email ? { email: email } : null; }
 function spreadsheet_() { if (SHEET_ID.indexOf('PASTE_') === 0) throw new Error('Add your Google Sheet ID in google-apps-script/Code.gs.'); return SpreadsheetApp.openById(SHEET_ID); }
 function sheet_(name, headers) { const ss = spreadsheet_(); let sh = ss.getSheetByName(name); if (!sh) { sh = ss.insertSheet(name); sh.appendRow(headers); } return sh; }
+function defaultSettings_() {
+  return { courts: [], instapayUrl: '', instapayQr: '', heroImage: '', contactPhones: ['0927 535 8196', '0908 907 8224', '0933 536 8205'], contactEmail: 'maryjeandagondon@gmail.com', contactName: 'Sweat Paddle Court', contactAddress: 'San Antonio, Brgy. Linao, Talisay City, Cebu', businessHours: 'Open daily' };
+}
+function normalizeSettings_(value) {
+  const result = Object.assign(defaultSettings_(), value || {});
+  result.contactPhones = Array.isArray(result.contactPhones) ? result.contactPhones.filter(function (phone) { return typeof phone === 'string' && phone.trim(); }).slice(0, 3) : defaultSettings_().contactPhones;
+  return result;
+}
 function readSettings_() {
   const sh = sheet_('Settings', ['key', 'json']), rows = sh.getDataRange().getValues(), chunks = {}, settingRow = rows.slice(1).find(function (r) { return r[0] === SETTINGS_KEY; });
   rows.slice(1).forEach(function (r) { const m = String(r[0] || '').match(/^img:(.+):(\d+)$/); if (m) { chunks[m[1]] = chunks[m[1]] || []; chunks[m[1]][Number(m[2])] = String(r[1] || ''); } });
-  if (!settingRow) return { courts: [], instapayUrl: '', instapayQr: '', heroImage: '' };
-  try { const value = JSON.parse(settingRow[1]); hydrateImages_(value, chunks); return value; } catch (e) { return { courts: [], instapayUrl: '', instapayQr: '', heroImage: '' }; }
+  if (!settingRow) return defaultSettings_();
+  try { const value = JSON.parse(settingRow[1]); hydrateImages_(value, chunks); return normalizeSettings_(value); } catch (e) { return defaultSettings_(); }
 }
 function writeSettings_(value) {
   const sh = sheet_('Settings', ['key', 'json']), current = sh.getDataRange().getValues(), rows = [], stored = JSON.parse(JSON.stringify(value)), chunkSize = 40000;
