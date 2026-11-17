@@ -367,6 +367,10 @@
       try {
         const body = { contactPhones: [1, 2, 3].map(index => $(`#contactPhone${index}`).value.trim()).filter(Boolean), contactEmail: $('#contactEmailInput').value.trim(), contactName: $('#contactNameInput').value.trim(), contactAddress: $('#contactAddressInput').value.trim(), businessHours: $('#businessHoursInput').value.trim() };
         const result = await patch('/api/admin/settings', body);
+        const savedPhones = Array.isArray(result.settings?.contactPhones) ? result.settings.contactPhones : null;
+        if (!savedPhones || savedPhones.join('|') !== body.contactPhones.join('|') || result.settings.contactEmail !== body.contactEmail || result.settings.contactName !== body.contactName || result.settings.contactAddress !== body.contactAddress || result.settings.businessHours !== body.businessHours) {
+          throw new Error('The contact editor needs the latest Apps Script code. Update Code.gs in Apps Script and redeploy the web app.');
+        }
         settings = normalizeSettings(result.settings); adminDashboardData.settings = settings; savePublicCache({ settings, adminSetupRequired }); refreshPublic();
         showNotice(message, 'Contact information saved.', false);
       } catch (error) { showNotice(message, error.message); }
