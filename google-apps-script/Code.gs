@@ -183,7 +183,9 @@ function createBooking_(body) {
     if (name.length < 2 || !validDate_(date) || !times.length) return fail_(400, 'Enter your name, choose a valid date, and select at least one hour.');
     const settings = readSettings_(), court = settings.courts.find(function (c) { return c.id === courtId; });
     if (!court) return fail_(400, 'That court is no longer available. Refresh and try again.');
-    const minutes = times.map(parseTime_);
+    const openingMinute = Number.isInteger(Number(court.openingMinute)) ? Number(court.openingMinute) : 300;
+    const closingMinute = Number.isInteger(Number(court.closingMinute)) ? Number(court.closingMinute) : 1320;
+    const minutes = times.map(function (time) { const minute = parseTime_(time); return minute !== null && closingMinute > 1440 && minute < openingMinute ? minute + 1440 : minute; });
     if (minutes.some(function (n) { return n === null; }) || new Set(minutes).size !== minutes.length) return fail_(400, 'One or more selected times are invalid.');
     minutes.sort(function (a, b) { return a - b; });
     if (bookingTimeHasPassed_(date, minutes)) return fail_(400, 'One or more selected times have already passed. Choose a future time.');
@@ -191,8 +193,8 @@ function createBooking_(body) {
     const rows = readBookings_();
     const clash = rows.some(function (b) { return bookingBlocksTime_(b) && b.dateISO === date && (courtId === 'exclusive' || b.courtId === 'exclusive' || b.courtId === courtId) && b.minutes.some(function (m) { return minutes.indexOf(m) >= 0; }); });
     if (clash) return fail_(409, 'That time was just booked. Please choose another available time.');
-    const opening = Number.isInteger(Number(court.openingMinute)) ? Number(court.openingMinute) : 300;
-    const closing = Number.isInteger(Number(court.closingMinute)) ? Number(court.closingMinute) : 1320;
+    const opening = openingMinute;
+    const closing = closingMinute;
     const dayRateStart = Number.isInteger(Number(court.dayRateStartMinute)) ? Number(court.dayRateStartMinute) : opening; const nightRateStart = Number.isInteger(Number(court.nightRateStartMinute)) ? Number(court.nightRateStartMinute) : (Number.isInteger(Number(court.priceChangeMinute)) ? Number(court.priceChangeMinute) : 1020);
     if (minutes.some(function (minute) { return minute < opening || minute + 60 > closing; })) return fail_(400, 'Selected hours fall outside this court opening schedule. Refresh and choose an open time.');
     const labels = minutes.map(formatTime_), amount = minutes.reduce(function (sum, minute) { return sum + Number(minute >= dayRateStart && minute < nightRateStart ? court.dayRate : court.nightRate); }, 0);
@@ -335,13 +337,13 @@ function findBooking_(reference, name) { const b = readBookings_().find(function
 function normalizeCourt_(input) {
   const name = String(input.name || '').trim().slice(0, 80), dayRate = Number(input.dayRate), nightRate = Number(input.nightRate);
   const openingMinute = input.openingMinute === undefined ? 300 : Number(input.openingMinute), closingMinute = input.closingMinute === undefined ? 1320 : Number(input.closingMinute); const dayRateStartMinute = input.dayRateStartMinute === undefined ? openingMinute : Number(input.dayRateStartMinute); const nightRateStartMinute = input.nightRateStartMinute === undefined ? (input.priceChangeMinute === undefined ? 1020 : Number(input.priceChangeMinute)) : Number(input.nightRateStartMinute);
-  if (!name || !Number.isFinite(dayRate) || dayRate < 1 || !Number.isFinite(nightRate) || nightRate < 1 || !Number.isInteger(openingMinute) || openingMinute < 0 || openingMinute >= 1440 || openingMinute % 60 || !Number.isInteger(closingMinute) || closingMinute <= openingMinute || closingMinute > 1440 || closingMinute % 60 || !Number.isInteger(dayRateStartMinute) || dayRateStartMinute < openingMinute || dayRateStartMinute >= closingMinute || dayRateStartMinute % 60 || !Number.isInteger(nightRateStartMinute) || nightRateStartMinute <= dayRateStartMinute || nightRateStartMinute >= closingMinute || nightRateStartMinute % 60) return null;
+  if (!name || !Number.isFinite(dayRate) || dayRate < 1 || !Number.isFinite(nightRate) || nightRate < 1 || !Number.isInteger(openingMinute) || openingMinute < 0 || openingMinute >= 1440 || openingMinute % 60 || !Number.isInteger(closingMinute) || closingMinute <= openingMinute || closingMinute > openingMinute + 1440 || closingMinute % 60 || !Number.isInteger(dayRateStartMinute) || dayRateStartMinute < openingMinute || dayRateStartMinute >= closingMinute || dayRateStartMinute % 60 || !Number.isInteger(nightRateStartMinute) || nightRateStartMinute <= dayRateStartMinute || nightRateStartMinute >= closingMinute || nightRateStartMinute % 60) return null;
   return { id: input.id || Utilities.getUuid(), name: name, location: String(input.location || '').slice(0, 160), openingMinute: openingMinute, closingMinute: closingMinute, dayRateStartMinute: dayRateStartMinute, nightRateStartMinute: nightRateStartMinute, dayRate: dayRate, nightRate: nightRate, displayPrice: Number(input.displayPrice) || dayRate, maxPlayers: Number(input.maxPlayers) || 10, description: String(input.description || '').slice(0, 1000), image: validImage_(input.image) ? input.image : '' };
 }
 function validImage_(value) { return typeof value === 'string' && value.length <= 5000000 && /^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i.test(value); }
 function parseQuery_(url) { const query = {}; const part = url.split('?')[1] || ''; part.split('&').forEach(function (p) { if (!p) return; const pair = p.split('='); query[decodeURIComponent(pair[0])] = decodeURIComponent((pair[1] || '').replace(/\+/g, ' ')); }); return query; }
 function parseTime_(value) { const m = String(value).match(/^(0?[1-9]|1[0-2]):00\s*(AM|PM)$/i); if (!m) return null; let hour = Number(m[1]) % 12; if (m[2].toUpperCase() === 'PM') hour += 12; return hour * 60; }
-function formatTime_(n) { const h = Math.floor(n / 60), hr = h % 12 || 12; return String(hr).padStart(2, '0') + ':00 ' + (h >= 12 ? 'PM' : 'AM'); }
+function formatTime_(n) { const minuteOfDay = ((n % 1440) + 1440) % 1440, h = Math.floor(minuteOfDay / 60), hr = h % 12 || 12; return String(hr).padStart(2, '0') + ':00 ' + (h >= 12 ? 'PM' : 'AM'); }
 function formatDate_(iso) { const p = iso.split('-'); return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])).toLocaleDateString('en-PH', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }); }
 function validDate_(s) { if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false; const d = new Date(s + 'T00:00:00Z'); return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; }
 function validEmail_(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); }
