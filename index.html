@@ -7,15 +7,15 @@
   <script>
     (() => {
       const navigation = performance.getEntriesByType('navigation')[0];
-      if (navigation?.type !== 'reload') return;
+      const isReload = navigation?.type === 'reload' || performance.navigation?.type === 1;
+      if (!isReload) return;
       if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
       const toTop = () => window.scrollTo(0, 0);
+      const delayedTop = () => { toTop(); setTimeout(toTop, 120); };
       toTop();
-      document.addEventListener('DOMContentLoaded', toTop, { once: true });
-      window.addEventListener('load', () => requestAnimationFrame(() => requestAnimationFrame(() => {
-        toTop();
-        setTimeout(() => { if ('scrollRestoration' in history) history.scrollRestoration = 'auto'; }, 0);
-      })), { once: true });
+      document.addEventListener('DOMContentLoaded', delayedTop, { once: true });
+      window.addEventListener('load', delayedTop, { once: true });
+      window.addEventListener('pageshow', delayedTop, { once: true });
     })();
   </script>
   <title>Sweat Paddle Court — Book your court</title>
@@ -196,6 +196,6 @@
     </section>  </main><footer><div class="wrap footer-copyright">© 2026 Sweat Paddle Court - Cebu. All rights reserved.</div></footer>
   <div class="modal-backdrop" id="modal"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><button class="close" id="close">×</button><div id="modalContent"></div></div></div>
   <script src="api-config.js" defer></script>
-  <script src="app.js?v=refresh-top-icons-20261117-2" defer></script>
+  <script src="app.js?v=refresh-top-icons-20261117-3" defer></script>
 </body>
 </html>
