@@ -54,16 +54,30 @@ function route_(packet) {
   }
   if (method === 'POST' && path === '/api/bookings') return createBooking_(body);
   if (method === 'POST' && path === '/api/bookings/report') {
-    const booking = findBooking_(body.reference, body.name);
-    if (!booking) return fail_(404, 'No booking matched that reference and name.');
-    if (booking.status === 'Paid') return fail_(409, 'This booking has already been verified as paid.');
     const paymentReference = String(body.paymentReference || '').trim().slice(0, 120);
     const receiptImage = String(body.receiptImage || '');
     if (!paymentReference && !receiptImage) return fail_(400, 'Upload a receipt image or enter a payment reference number.');
     if (receiptImage && !validImage_(receiptImage)) return fail_(400, 'Receipt must be a PNG, JPEG, GIF, or WebP image under 3 MB.');
-    saveBookingProof_(booking.reference, paymentReference, receiptImage);
-    if (booking.status === 'Awaiting payment') updateBooking_(booking.reference, function (row) { row.status = 'Payment reported'; });
-    return ok_({ ok: true });
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(20000)) return fail_(503, 'Bookings are busy. Please try again.');
+    try {
+      let booking = findBooking_(body.reference, body.name);
+      if (booking && booking.status === 'Paid') return fail_(409, 'This booking has already been verified as paid.');
+      if (!booking) {
+        const result = bookingFromRequest_(body, body.reference);
+        if (!result.booking) return fail_(result.status, result.error);
+        if (readBookings_().some(function (item) { return item.reference === result.booking.reference; })) return fail_(409, 'This booking reference is already in use. Please start again.');
+        booking = result.booking;
+        booking.status = 'Payment reported';
+        appendBooking_(booking);
+        try { saveBookingProof_(booking.reference, paymentReference, receiptImage); }
+        catch (error) { deleteBooking_(booking.reference); throw error; }
+      } else {
+        saveBookingProof_(booking.reference, paymentReference, receiptImage);
+        if (booking.status === 'Awaiting payment') updateBooking_(booking.reference, function (row) { row.status = 'Payment reported'; });
+      }
+      return ok_({ ok: true });
+    } finally { lock.releaseLock(); }
   }
   if (method === 'POST' && path === '/api/bookings/track') {
     const booking = findBooking_(body.reference, body.name);
@@ -178,30 +192,37 @@ function createBooking_(body) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) return fail_(503, 'Bookings are busy. Please try again.');
   try {
-    const name = String(body.name || '').trim().slice(0, 80), courtId = String(body.courtId || ''), date = String(body.dateISO || '');
-    const times = Array.isArray(body.times) ? Array.from(new Set(body.times)).slice(0, 24) : [];
-    if (name.length < 2 || !validDate_(date) || !times.length) return fail_(400, 'Enter your name, choose a valid date, and select at least one hour.');
-    const settings = readSettings_(), court = settings.courts.find(function (c) { return c.id === courtId; });
-    if (!court) return fail_(400, 'That court is no longer available. Refresh and try again.');
-    const openingMinute = Number.isInteger(Number(court.openingMinute)) ? Number(court.openingMinute) : 300;
-    const closingMinute = Number.isInteger(Number(court.closingMinute)) ? Number(court.closingMinute) : 1320;
-    const minutes = times.map(function (time) { const minute = parseTime_(time); return minute !== null && closingMinute > 1440 && minute < openingMinute ? minute + 1440 : minute; });
-    if (minutes.some(function (n) { return n === null; }) || new Set(minutes).size !== minutes.length) return fail_(400, 'One or more selected times are invalid.');
-    minutes.sort(function (a, b) { return a - b; });
-    if (bookingTimeHasPassed_(date, minutes)) return fail_(400, 'One or more selected times have already passed. Choose a future time.');
-    if (courtId === 'exclusive' && minutes.length > 1) return fail_(400, 'Exclusive court bookings must be reserved one hour at a time.');
-    const rows = readBookings_();
-    const clash = rows.some(function (b) { return bookingBlocksTime_(b) && b.dateISO === date && (courtId === 'exclusive' || b.courtId === 'exclusive' || b.courtId === courtId) && b.minutes.some(function (m) { return minutes.indexOf(m) >= 0; }); });
-    if (clash) return fail_(409, 'That time was just booked. Please choose another available time.');
-    const opening = openingMinute;
-    const closing = closingMinute;
-    const dayRateStart = Number.isInteger(Number(court.dayRateStartMinute)) ? Number(court.dayRateStartMinute) : opening; const nightRateStart = Number.isInteger(Number(court.nightRateStartMinute)) ? Number(court.nightRateStartMinute) : (Number.isInteger(Number(court.priceChangeMinute)) ? Number(court.priceChangeMinute) : 1020);
-    if (minutes.some(function (minute) { return minute < opening || minute + 60 > closing; })) return fail_(400, 'Selected hours fall outside this court opening schedule. Refresh and choose an open time.');
-    const labels = minutes.map(formatTime_), amount = minutes.reduce(function (sum, minute) { return sum + Number(minute >= dayRateStart && minute < nightRateStart ? court.dayRate : court.nightRate); }, 0);
-    const booking = { reference: 'SP-' + Utilities.getUuid().replace(/-/g, '').toUpperCase(), name: name, courtId: courtId, court: court.name, dateISO: date, date: formatDate_(date), times: labels, time: labels.join(', '), minutes: minutes, duration: minutes.length, amount: amount, status: 'Awaiting payment', createdAt: new Date().toISOString(), paidAt: '' };
-    appendBooking_(booking);
-    return ok_({ booking: booking, settings: settings }, 201);
+    const result = bookingFromRequest_(body, '');
+    if (!result.booking) return fail_(result.status, result.error);
+    return ok_({ booking: result.booking, settings: result.settings }, 201);
   } finally { lock.releaseLock(); }
+}
+
+function bookingFromRequest_(body, reference) {
+  const name = String(body.name || '').trim().slice(0, 80), courtId = String(body.courtId || ''), date = String(body.dateISO || '');
+  const times = Array.isArray(body.times) ? Array.from(new Set(body.times)).slice(0, 24) : [];
+  if (name.length < 2 || !validDate_(date) || !times.length) return { status: 400, error: 'Enter your name, choose a valid date, and select at least one hour.' };
+  const settings = readSettings_(), court = settings.courts.find(function (c) { return c.id === courtId; });
+  if (!court) return { status: 400, error: 'That court is no longer available. Refresh and try again.' };
+  const openingMinute = Number.isInteger(Number(court.openingMinute)) ? Number(court.openingMinute) : 300;
+  const closingMinute = Number.isInteger(Number(court.closingMinute)) ? Number(court.closingMinute) : 1320;
+  const minutes = times.map(function (time) { const minute = parseTime_(time); return minute !== null && closingMinute > 1440 && minute < openingMinute ? minute + 1440 : minute; });
+  if (minutes.some(function (n) { return n === null; }) || new Set(minutes).size !== minutes.length) return { status: 400, error: 'One or more selected times are invalid.' };
+  minutes.sort(function (a, b) { return a - b; });
+  if (bookingTimeHasPassed_(date, minutes)) return { status: 400, error: 'One or more selected times have already passed. Choose a future time.' };
+  if (courtId === 'exclusive' && minutes.length > 1) return { status: 400, error: 'Exclusive court bookings must be reserved one hour at a time.' };
+  const rows = readBookings_();
+  const clash = rows.some(function (b) { return bookingBlocksTime_(b) && b.dateISO === date && (courtId === 'exclusive' || b.courtId === 'exclusive' || b.courtId === courtId) && b.minutes.some(function (m) { return minutes.indexOf(m) >= 0; }); });
+  if (clash) return { status: 409, error: 'That time was just booked. Please choose another available time.' };
+  const opening = openingMinute;
+  const closing = closingMinute;
+  const dayRateStart = Number.isInteger(Number(court.dayRateStartMinute)) ? Number(court.dayRateStartMinute) : opening; const nightRateStart = Number.isInteger(Number(court.nightRateStartMinute)) ? Number(court.nightRateStartMinute) : (Number.isInteger(Number(court.priceChangeMinute)) ? Number(court.priceChangeMinute) : 1020);
+  if (minutes.some(function (minute) { return minute < opening || minute + 60 > closing; })) return { status: 400, error: 'Selected hours fall outside this court opening schedule. Refresh and choose an open time.' };
+  const suppliedReference = String(reference || '').trim();
+  if (suppliedReference && !/^SP-[A-F0-9]{32}$/.test(suppliedReference)) return { status: 400, error: 'This booking request is invalid. Please start again.' };
+  const labels = minutes.map(formatTime_), amount = minutes.reduce(function (sum, minute) { return sum + Number(minute >= dayRateStart && minute < nightRateStart ? court.dayRate : court.nightRate); }, 0);
+  const booking = { reference: suppliedReference || 'SP-' + Utilities.getUuid().replace(/-/g, '').toUpperCase(), name: name, courtId: courtId, court: court.name, dateISO: date, date: formatDate_(date), times: labels, time: labels.join(', '), minutes: minutes, duration: minutes.length, amount: amount, status: 'Awaiting payment', createdAt: new Date().toISOString(), paidAt: '' };
+  return { booking: booking, settings: settings };
 }
 
 function setupAdmin_(body) {
