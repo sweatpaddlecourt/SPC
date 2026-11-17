@@ -1,5 +1,13 @@
 'use strict';
 (() => {
+  const navigationEntry = performance.getEntriesByType('navigation')[0];
+  if (navigationEntry?.type === 'reload') {
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    const scrollToTop = () => window.scrollTo(0, 0);
+    scrollToTop();
+    document.addEventListener('DOMContentLoaded', scrollToTop, { once: true });
+    window.addEventListener('pageshow', () => { scrollToTop(); history.scrollRestoration = 'auto'; }, { once: true });
+  }
   const $ = (selector, root = document) => root.querySelector(selector);
   const modal = $('#modal'), modalContent = $('#modalContent');
   const dateInput = $('#date');
