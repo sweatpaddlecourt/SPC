@@ -13,6 +13,10 @@ The website can be hosted as static files on GitHub Pages. Shared courts, settin
 7. Commit and push the site to GitHub, then enable GitHub Pages for the repository. Open the published site, select the admin icon, and create the admin account using the setup token from step 4. Setup closes after the first account is created.
 8. Use the admin dashboard to add courts and configure the payment link or QR code.
 
+## Updating the Apps Script web app
+
+When a site update changes the API code, copy the latest `google-apps-script/Code.gs` into the existing Apps Script project and save it. Then choose **Deploy → Manage deployments**, edit the current web app deployment, select **New version**, and deploy. Keep the same `/exec` URL in `api-config.js`; editing a deployment updates its version without changing that URL.
+
 The first request creates the `Settings` and `Bookings` tabs in the Sheet. Large uploaded image data is split into cells below the Sheets per-cell text limit. Keep the Sheet private; only the Apps Script runs as its owner and accesses the Sheet.
 
 ## How requests and booking conflicts work
