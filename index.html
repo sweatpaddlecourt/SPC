@@ -120,7 +120,36 @@
     .password-control{display:flex;align-items:center;gap:8px;min-width:0}.password-control input{flex:1;min-width:0;width:0}.password-toggle{flex:0 0 auto;min-width:60px;height:40px;padding:0 12px;border:1px solid #dce5db;border-radius:9px;background:#f7faf5;color:#087c7a;font:700 12px 'DM Sans',sans-serif;transition:background .18s ease,border-color .18s ease,color .18s ease}.password-toggle:hover{background:#e9f4e8;border-color:#9dc4b4;color:#075b59}.password-toggle:focus-visible{outline:3px solid #078e8d55;outline-offset:2px}.modal-fields .password-control input{height:46px}.admin-box .password-control input{height:40px}
 .hero-location{display:inline-flex;align-items:center;gap:4px}.location-pin-icon{display:inline-block;width:14px;height:14px;flex:0 0 14px;fill:#087f7d;vertical-align:-2px}.location-pin-icon circle{fill:#fffdf6;stroke:none}.court-loc .location-pin-icon{width:13px;height:13px;flex-basis:13px;margin-right:3px}.admin-box textarea{width:100%;min-height:72px;border:1px solid #e3e8dd;border-radius:8px;padding:10px;font:500 14px 'DM Sans',sans-serif;resize:vertical}.admin-box textarea:focus{outline:none;border-color:#078e8d;box-shadow:0 0 0 3px #078e8d20}
 .contact-icon .contact-pin-mark{display:block;width:22px;height:22px;color:#087f7d;fill:currentColor}.contact-icon .contact-pin-mark circle{fill:#dff3e8;stroke:none}
-</style>
+
+    .contact-settings-manager>p{color:#718177;font-size:13px;line-height:1.5;margin:0 0 14px}
+    .contact-settings-actions{display:flex;gap:10px;flex-wrap:wrap}
+    .contact-settings-actions .pill{flex:1 1 190px;margin:0}
+    .contact-settings-backdrop{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:16px;background:#153a31a8}
+    .contact-settings-dialog{width:min(480px,100%);max-height:min(88dvh,720px);overflow:auto;overscroll-behavior:contain;background:#fff;border:1px solid #e2e9dd;border-radius:20px;padding:22px;box-shadow:0 20px 70px #10292055}
+    .contact-settings-dialog header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px}
+    .contact-settings-dialog h3{font:800 21px Manrope,sans-serif;letter-spacing:-.4px;margin:0 0 6px;color:var(--ink)}
+    .contact-settings-dialog p{color:#77877d;font-size:13px;line-height:1.55;margin:0 0 14px}
+    .contact-settings-dialog label{display:block;margin:6px 0;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#7c8981}
+    .contact-settings-dialog input{width:100%;height:43px;border:1px solid #e3e8dd;border-radius:9px;padding:0 12px;font:500 14px 'DM Sans',sans-serif}
+    .contact-popup-close{flex:0 0 34px;width:34px;height:34px;border:0;border-radius:50%;background:#f2f4ec;color:#52645b;font-size:22px;line-height:1;cursor:pointer}
+    .contact-popup-secondary{min-height:40px;border:1px solid #dce7dc;border-radius:10px;background:#f7faf4;color:#087c7a;padding:9px 13px;font:700 13px 'DM Sans',sans-serif;cursor:pointer}
+    .contact-popup-secondary:disabled{opacity:.45;cursor:not-allowed}
+    .phone-settings-rows{display:grid;gap:12px}
+    .phone-settings-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px 10px;align-items:end}
+    .phone-settings-row label{grid-column:1/-1;margin:0}
+    .phone-settings-row input{min-width:0}
+    .remove-phone,.remove-email{color:#b14d38;background:#fbf2ed;border-color:#f1ded5}
+    .remove-email{margin-top:10px}
+    .contact-popup-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+    .contact-popup-actions .pill{margin:0;min-height:42px}
+    .contact-settings-dialog .payment-help{min-height:18px;margin:10px 0}
+    .loading-spinner{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-2px;margin-right:6px;animation:admin-save-spin .7s linear infinite}
+    @keyframes admin-save-spin{to{transform:rotate(360deg)}}
+    .modal.admin-modal.is-saving{overflow:hidden!important;overscroll-behavior:none}
+    html.admin-saving .contact-settings-dialog{overflow:hidden!important;overscroll-behavior:none}
+    html.admin-saving,html.admin-saving body{overflow:hidden!important;overscroll-behavior:none}
+    @media(max-width:520px){.contact-settings-backdrop{padding:10px}.contact-settings-dialog{padding:18px;border-radius:17px;max-height:92dvh}.contact-settings-actions{display:grid;grid-template-columns:1fr}.phone-settings-row{grid-template-columns:minmax(0,1fr) auto}.contact-popup-actions{grid-template-columns:1fr 1fr}}
+  </style>
 </head>
 <body>
   <div class="site-loader" id="siteLoader" role="status" aria-label="Loading Sweat Paddle Court">
@@ -149,6 +178,6 @@
     </section>  </main><footer><div class="wrap footer-copyright">© 2026 Sweat Paddle Court - Cebu. All rights reserved.</div></footer>
   <div class="modal-backdrop" id="modal"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><button class="close" id="close">×</button><div id="modalContent"></div></div></div>
   <script src="api-config.js" defer></script>
-  <script src="app.js?v=contact-admin-20261117-2" defer></script>
+  <script src="app.js?v=contact-manager-popups-20261117-1" defer></script>
 </body>
 </html>
