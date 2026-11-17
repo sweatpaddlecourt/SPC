@@ -194,6 +194,17 @@
     @media(max-width:520px){.homepage-settings-launcher{align-items:stretch;flex-direction:column}.homepage-settings-launcher .pill{width:100%}.homepage-settings-backdrop{padding:10px}.homepage-settings-dialog{padding:18px;border-radius:17px;max-height:92dvh}.homepage-photo-gallery{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(hover:none){.homepage-photo-actions{opacity:1;visibility:visible;transform:none}}
   </style>
+  <style>
+    .admin-action-backdrop{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:16px;background:rgba(22,48,43,.48);backdrop-filter:blur(3px)}
+    .admin-action-dialog{width:min(340px,100%);padding:28px 24px 25px;background:#fff;border:1px solid #e2e9dd;border-radius:22px;box-shadow:0 20px 60px #123a3540;text-align:center}
+    .admin-action-dialog h2{margin:12px 0 7px;color:#244541;font:800 20px Manrope,sans-serif}
+    .admin-action-dialog p{margin:0;color:#718177;font-size:14px;line-height:1.5}
+    .admin-action-icon{width:56px;height:56px;margin:0 auto;border-radius:50%;display:grid;place-items:center;background:#e4f5ee;color:#078e8d}
+    .admin-action-icon.is-success{background:#e5f3e7;color:#24754a;font-size:30px;font-weight:800}
+    .admin-action-spinner{width:34px;height:34px;border:4px solid #dcebe4;border-top-color:#078e8d;border-radius:50%;animation:admin-action-spin .75s linear infinite}
+    @keyframes admin-action-spin{to{transform:rotate(360deg)}}
+    @media(prefers-reduced-motion:reduce){.admin-action-spinner{animation-duration:1.5s}}
+  </style>
 </head>
 <body>
   <div class="site-loader" id="siteLoader" role="status" aria-label="Loading Sweat Paddle Court">
@@ -222,6 +233,6 @@
     </section>  </main><footer><div class="wrap footer-copyright">© 2026 Sweat Paddle Court - Cebu. All rights reserved.</div></footer>
   <div class="modal-backdrop" id="modal"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><button class="close" id="close">×</button><div id="modalContent"></div></div></div>
   <script src="api-config.js" defer></script>
-  <script src="app.js?v=paid-stays-pending-delete-cancelled-20261117-1" defer></script>
+  <script src="app.js?v=action-feedback-20261117-1" defer></script>
 </body>
 </html>
