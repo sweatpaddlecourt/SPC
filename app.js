@@ -588,10 +588,10 @@
     }));
     modalContent.querySelectorAll('[data-delete-court]').forEach(button => button.addEventListener('click', async () => {
       const id = button.dataset.deleteCourt;
-      if (!window.confirm(\`Delete \${button.dataset.courtName}? This will remove it from the public court list.\`)) return;
+      if (!window.confirm(`Delete ${button.dataset.courtName}? This will remove it from the public court list.`)) return;
       const action = showActionPopup('Deleting court…', 'Removing this court from the public booking page.');
       try {
-        const result = await api(\`/api/admin/courts/\${encodeURIComponent(id)}\`, { method: 'DELETE' });
+        const result = await api(`/api/admin/courts/${encodeURIComponent(id)}`, { method: 'DELETE' });
         settings = normalizeSettings(result.settings); refreshPublic(); await renderAdmin();
         await action.complete('Court deleted', 'The court was removed from the site.');
       } catch (error) { action.dismiss(); showError(error.message); }
