@@ -296,7 +296,7 @@
       const query = adminBookingSearchQuery.trim().toLocaleLowerCase();
       const visibleBookings = query ? bookings.filter(booking => [booking.name, booking.reference].some(value => String(value || '').toLocaleLowerCase().includes(query))) : bookings;
       if (!visibleBookings.length) return '<div class="empty-state">' + (query ? 'No bookings match “' + escapeHtml(adminBookingSearchQuery.trim()) + '”.' : 'No bookings in this section.') + '</div>';
-      return `<div style="overflow:auto"><table class="admin-bookings"><thead><tr><th>Ref / Client</th><th>Session</th><th>Amount</th><th>Status</th><th>Payment proof</th><th>Actions</th></tr></thead><tbody>${visibleBookings.map(booking => `<tr><td><strong class="admin-booking-client">${escapeHtml(booking.name)}</strong><span class="admin-booking-reference">${escapeHtml(booking.reference)}</span></td><td>${escapeHtml(booking.date)}<br>${escapeHtml(booking.time)} · ${escapeHtml(booking.court)}</td><td>${money(booking.amount)}</td><td><span class="status ${booking.status === 'Paid' ? 'paid' : ''}">${escapeHtml(booking.status)}</span></td><td>${booking.paymentReference ? `<b>Ref: ${escapeHtml(booking.paymentReference)}</b>` : ''}${booking.hasReceipt ? `${booking.paymentReference ? '<br>' : ''}<button data-payment-proof="${escapeHtml(booking.reference)}">View receipt image</button>` : (!booking.paymentReference ? 'No proof submitted' : '')}</td><td>${booking.status === 'Paid' || /^cancel/i.test(booking.status || '') ? '' : `<button data-paid="${escapeHtml(booking.reference)}">${booking.hasReceipt || booking.paymentReference ? 'Mark paid' : 'Cancel · no proof'}</button>`}${!/^cancel/i.test(booking.status || '') ? `<button data-cancel-booking="${escapeHtml(booking.reference)}">Cancel</button>` : ''}${booking.status === 'Paid' ? `<button data-receipt="${escapeHtml(booking.reference)}">Receipt</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`;
+      return `<div style="overflow:auto"><table class="admin-bookings"><thead><tr><th>Ref / Client</th><th>Session</th><th>Amount</th><th>Status</th><th>Payment proof</th><th>Actions</th></tr></thead><tbody>${visibleBookings.map(booking => `<tr><td><strong class="admin-booking-client">${escapeHtml(booking.name)}</strong><span class="admin-booking-reference">${escapeHtml(booking.reference)}</span></td><td>${escapeHtml(booking.date)}<br>${escapeHtml(booking.time)} · ${escapeHtml(booking.court)}</td><td>${money(booking.amount)}</td><td><span class="status ${booking.status === 'Paid' ? 'paid' : ''}">${escapeHtml(booking.status)}</span></td><td>${booking.paymentReference ? `<b>Ref: ${escapeHtml(booking.paymentReference)}</b>` : ''}${booking.hasReceipt ? `${booking.paymentReference ? '<br>' : ''}<button data-payment-proof="${escapeHtml(booking.reference)}">View receipt image</button>` : (!booking.paymentReference ? 'No proof submitted' : '')}</td><td>${booking.status === 'Paid' || /^cancel/i.test(booking.status || '') ? '' : `<button data-paid="${escapeHtml(booking.reference)}">${booking.hasReceipt || booking.paymentReference ? 'Mark paid' : 'Cancel · no proof'}</button>`}${!/^cancel/i.test(booking.status || '') ? `<button data-cancel-booking="${escapeHtml(booking.reference)}">Cancel</button>` : ''}${booking.status === 'Paid' ? `<button data-receipt="${escapeHtml(booking.reference)}">Receipt</button>` : ''}${/^cancel/i.test(booking.status || '') ? `<button type="button" class="delete-booking" data-delete-booking="${escapeHtml(booking.reference)}">Delete</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`;
     }
     let bookingSectionData = [
       ['pending', 'Pending', pendingBookings],
@@ -586,7 +586,23 @@
       }
     }
     function bindBookingActions() {
-    modalContent.querySelectorAll('[data-paid]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.paid, 'Paid', 'paid')));
+    modalContent.querySelectorAll('[data-delete-booking]').forEach(button => button.addEventListener('click', async () => {
+      const reference = button.dataset.deleteBooking;
+      const booking = adminDashboardData?.bookings.find(item => item.reference === reference);
+      if (!booking || !/^cancel/i.test(booking.status || '')) return;
+      if (!window.confirm('Delete this cancelled booking and its payment proof? This cannot be undone.')) return;
+      button.disabled = true;
+      try {
+        await api(`/api/admin/bookings/${encodeURIComponent(reference)}`, { method: 'DELETE' });
+        adminDashboardData = await api('/api/admin/dashboard');
+        await renderAdmin({ useCache: true, activeTab: 'cancelled' });
+        showNotice($('#bookingAdminNotice'), 'Cancelled booking and payment proof deleted.', false);
+      } catch (error) {
+        button.disabled = false;
+        showNotice($('#bookingAdminNotice'), error.message);
+      }
+    }));
+    modalContent.querySelectorAll('[data-paid]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.paid, 'Paid', 'pending')));
     modalContent.querySelectorAll('[data-cancel-booking]').forEach(button => button.addEventListener('click', () => saveBookingStatus(button.dataset.cancelBooking, 'Cancelled', 'pending')));
     modalContent.querySelectorAll('[data-payment-proof]').forEach(button => button.addEventListener('click', async () => {
       $('#adminReceiptPreview')?.remove();
